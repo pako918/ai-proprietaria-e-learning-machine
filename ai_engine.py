@@ -26,6 +26,78 @@ DATA_DIR.mkdir(exist_ok=True)
 MODEL_DIR.mkdir(exist_ok=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
+# VALIDATORI FORMATO — ogni campo ha una regola di validazione
+# Solo i valori che passano la validazione possono entrare nel safe auto-learn
+# ═════════════════════════════════════════════════════════════════════════════
+
+def _valid_importo(v):
+    """Verifica che sia un importo monetario sensato (> 0 e < 10 miliardi)"""
+    try:
+        s = str(v).replace('€','').replace('.','').replace(',','.').strip()
+        num = float(re.sub(r'[^\d.]', '', s))
+        return 0 < num < 10_000_000_000
+    except: return False
+
+def _valid_punteggio(v):
+    try: return 0 < int(v) <= 100
+    except: return False
+
+def _valid_date(v):
+    return bool(re.search(r'\d{1,2}[/\-.][\d]{1,2}[/\-.][\d]{2,4}', str(v)))
+
+def _valid_nonempty(v):
+    return isinstance(v, str) and len(v.strip()) >= 3
+
+FIELD_VALIDATORS = {
+    # Identificativi — formato rigido
+    "cig":  lambda v: bool(re.match(r'^[A-Z0-9]{10}$', str(v).strip())),
+    "cup":  lambda v: bool(re.match(r'^[A-Z]\d{2}[A-Z]\d{11}$', str(v).strip())),
+    "cpv":  lambda v: bool(re.match(r'^\d{8}-\d$', str(v).strip())),
+    "nuts_code": lambda v: bool(re.match(r'^IT[A-Z]\d{2,3}$', str(v).strip())),
+    # Soggetti — devono avere almeno 5 char
+    "stazione_appaltante":       lambda v: isinstance(v, str) and len(v.strip()) >= 5,
+    "amministrazione_delegante": lambda v: isinstance(v, str) and len(v.strip()) >= 5,
+    "rup":                       lambda v: isinstance(v, str) and len(v.strip()) >= 4,
+    "responsabile_procedimento": lambda v: isinstance(v, str) and len(v.strip()) >= 4,
+    # Oggetto
+    "oggetto_appalto":    lambda v: isinstance(v, str) and len(v.strip()) >= 15,
+    "tipo_procedura":     lambda v: isinstance(v, str) and v != "Non specificata" and len(v) > 3,
+    "criterio_aggiudicazione": lambda v: isinstance(v, str) and v != "Non specificato" and len(v) > 3,
+    # Importi
+    "importo_totale":       _valid_importo,
+    "importo_base_gara":    _valid_importo,
+    "garanzia_provvisoria": _valid_importo,
+    "contributo_anac":      _valid_importo,
+    "imposta_bollo":        _valid_importo,
+    "fatturato_minimo":     _valid_importo,
+    # Punteggi (0 < p <= 100)
+    "punteggio_tecnica":            _valid_punteggio,
+    "punteggio_economica":          _valid_punteggio,
+    "soglia_sbarramento_tecnica":   _valid_punteggio,
+    "pti_giovani_professionisti":   _valid_punteggio,
+    "pti_iso_9001":                 _valid_punteggio,
+    "pti_parita_genere":            _valid_punteggio,
+    # Date
+    "termine_chiarimenti":  _valid_date,
+    # Testo libero
+    "durata_contratto":     _valid_nonempty,
+    "piattaforma_url":      lambda v: isinstance(v, str) and v.startswith('http'),
+    "subappalto":           _valid_nonempty,
+    "avvalimento":          _valid_nonempty,
+    "verifica_anomalia":    _valid_nonempty,
+    "finanziamento":        _valid_nonempty,
+    "garanzia_definitiva":  _valid_nonempty,
+}
+
+# Soglie di confidenza per auto-learn sicuro
+AUTO_LEARN_THRESHOLD = 0.85   # >= 85% → auto-learn
+QUARANTINE_THRESHOLD = 0.50   # 50-85% → quarantena (review umana)
+# Campi ESCLUSI dall'auto-learn (troppo rischiosi o complessi)
+AUTO_LEARN_BLACKLIST = {'note_operative', 'lotti', 'criteri_tecnici', 'vincoli_lotti',
+                        'scadenze', 'struttura_compenso_65_35', 'sopralluogo',
+                        'categorie_ingegneria'}
+
+# ═════════════════════════════════════════════════════════════════════════════
 # PATTERN CALIBRATI SUI BANDI REALI
 # ═════════════════════════════════════════════════════════════════════════════
 
@@ -197,12 +269,33 @@ def init_db():
             corrected TEXT,
             timestamp TEXT DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS auto_learn_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT,
+            field TEXT,
+            value TEXT,
+            confidence REAL,
+            validation_ok INTEGER,
+            action TEXT,
+            reason TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS quarantine (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT,
+            field TEXT,
+            value TEXT,
+            snippet TEXT,
+            confidence REAL,
+            status TEXT DEFAULT 'pending',
+            reviewed_at TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
     """)
-    # Migration: aggiungi colonna full_text se mancante
-    try:
-        c.execute("ALTER TABLE documents ADD COLUMN full_text TEXT")
-    except:
-        pass
+    # Migrations
+    for col, tbl in [('full_text', 'documents')]:
+        try: c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} TEXT")
+        except: pass
     conn.commit()
     conn.close()
 
@@ -677,33 +770,228 @@ class AppaltoExtractor:
 
         return r
 
-    # ── Auto-learning passivo ─────────────────────────────────────────────
+    # ═════════════════════════════════════════════════════════════════════
+    # SAFE AUTO-LEARNING — apprendimento automatico con protezione errori
+    # ═════════════════════════════════════════════════════════════════════
+
+    def _validate_field(self, field, value):
+        """Valida un valore estratto con il validatore specifico del campo.
+        Ritorna True se il valore è nel formato corretto."""
+        validator = FIELD_VALIDATORS.get(field)
+        if not validator:
+            return True  # Nessun validatore = accetta (per campi booleani/flag)
+        try:
+            return validator(value)
+        except:
+            return False
+
+    def _per_field_confidence(self, field, value, method, text):
+        """Calcola la confidenza per singolo campo (0.0 - 1.0).
+        Combina: metodo di estrazione + validazione formato + qualità snippet."""
+        score = 0.0
+
+        # 1. Metodo di estrazione
+        if method == "rules":
+            score += 0.55  # Regex match = buona base
+        elif method == "ml":
+            score += 0.35  # ML prediction = base media
+        elif method == "corrected":
+            score += 0.95  # Correzione umana = massima fiducia
+            return min(score, 1.0)
+
+        # 2. Validazione formato
+        if self._validate_field(field, value):
+            score += 0.25  # Formato valido = +0.25
+        else:
+            score -= 0.20  # Formato invalido = penalità
+
+        # 3. Campi con formato rigido (CIG, CUP, CPV) → bonus se regex li ha trovati
+        rigid_fields = {'cig', 'cup', 'cpv', 'nuts_code'}
+        if field in rigid_fields and method == "rules":
+            score += 0.15  # Formato rigido + regex = alta affidabilità
+
+        # 4. Punteggi sensibili: se tecnica + economica sommano ~100 → bonus
+        if field in ('punteggio_tecnica', 'punteggio_economica'):
+            score += 0.05  # I punteggi regex sono tipicamente affidabili
+
+        # 5. Snippet lungo → l'AI ha trovato il contesto → più affidabile
+        snippet = self._find_value_context(text, str(value), window=200)
+        if snippet and len(snippet) > 50:
+            score += 0.10
+
+        return max(0.0, min(score, 1.0))
+
     def _auto_learn(self, result, text):
-        """Ogni PDF contribuisce automaticamente al training set."""
-        auto_fields = {
-            "tipo_procedura": (r'procedura|accordo\s+quadro', result.get("tipo_procedura")),
-            "criterio_aggiudicazione": (r'vantaggiosa|ribasso|OEPV', result.get("criterio_aggiudicazione")),
-            "punteggio_tecnica": (r'tecnica|qualita', str(result.get("punteggio_tecnica", "")) or None),
-            "punteggio_economica": (r'economica|prezzo', str(result.get("punteggio_economica", "")) or None),
-        }
+        """Safe auto-learning: impara automaticamente solo da estrazioni
+        che superano validazione E confidenza alta.
+        Risultati dubbi vanno in quarantena per review umano."""
+        methods = result.get("_methods", {})
+        snippets = result.get("_snippets", {})
+        doc_id = result.get("_doc_id", "")
+
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        for field, (pat, value) in auto_fields.items():
-            if value and str(value).strip() and str(value) != "None":
-                m = re.search(f'.{{0,200}}{pat}.{{0,200}}', text, re.I)
-                if m:
-                    snippet = m.group(0)
-                    existing = c.execute(
-                        "SELECT COUNT(*) FROM training_samples WHERE field=? AND correct_value=?",
-                        (field, str(value))
-                    ).fetchone()[0]
-                    if existing == 0:
-                        c.execute(
-                            "INSERT INTO training_samples (field, text_snippet, correct_value) VALUES (?,?,?)",
-                            (field, snippet[:1000], str(value))
-                        )
+        auto_learned = 0
+        quarantined = 0
+
+        for field, value in result.items():
+            # Skip metadata e campi complessi
+            if field.startswith('_') or field in AUTO_LEARN_BLACKLIST:
+                continue
+            if value is None or value == "" or value == 0:
+                continue
+            if isinstance(value, (bool, dict, list)):
+                continue
+
+            method = methods.get(field, "")
+            val_str = str(value)
+
+            # ── Step 1: Validazione formato ─────────────────────────
+            is_valid = self._validate_field(field, value)
+
+            # ── Step 2: Calcolo confidenza per campo ────────────────
+            confidence = self._per_field_confidence(field, value, method, text)
+
+            # ── Step 3: Anti-duplicazione ───────────────────────────
+            existing = c.execute(
+                "SELECT COUNT(*) FROM training_samples WHERE field=? AND correct_value=?",
+                (field, val_str)
+            ).fetchone()[0]
+            if existing > 0:
+                # Già presente → skip (non duplicare)
+                c.execute(
+                    "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
+                    (doc_id, field, val_str, confidence, int(is_valid), "skip", "duplicato_esistente")
+                )
+                continue
+
+            # ── Step 4: Trova snippet contesto ──────────────────────
+            snippet = snippets.get(field, "")
+            if not snippet:
+                snippet = self._find_value_context(text, val_str, window=400)
+            if not snippet or len(snippet) < 20:
+                snippet = text[:1500]  # Fallback minimo
+
+            # ── Step 5: Decisione AUTO-LEARN / QUARANTENA / SKIP ────
+            if is_valid and confidence >= AUTO_LEARN_THRESHOLD:
+                # ✅ ALTO → auto-learn direttamente
+                c.execute(
+                    "INSERT INTO training_samples (field, text_snippet, correct_value) VALUES (?,?,?)",
+                    (field, snippet[:2000], val_str)
+                )
+                c.execute(
+                    "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
+                    (doc_id, field, val_str, confidence, 1, "auto_learned",
+                     f"conf={confidence:.2f}, valid=True, method={method}")
+                )
+                auto_learned += 1
+
+            elif is_valid and confidence >= QUARANTINE_THRESHOLD:
+                # ⚠️ MEDIO → quarantena (review umano)
+                c.execute(
+                    "INSERT INTO quarantine (doc_id, field, value, snippet, confidence) VALUES (?,?,?,?,?)",
+                    (doc_id, field, val_str, snippet[:2000], confidence)
+                )
+                c.execute(
+                    "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
+                    (doc_id, field, val_str, confidence, 1, "quarantined",
+                     f"conf={confidence:.2f} < {AUTO_LEARN_THRESHOLD} threshold")
+                )
+                quarantined += 1
+
+            else:
+                # ❌ BASSO / non valido → skip
+                c.execute(
+                    "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
+                    (doc_id, field, val_str, confidence, int(is_valid), "skipped",
+                     f"conf={confidence:.2f}, valid={is_valid}")
+                )
+
+        conn.commit()
+
+        # ── Step 6: Trigger training se abbastanza campioni ─────────
+        fields_to_check = set(f for f, _ in methods.items() if f not in AUTO_LEARN_BLACKLIST)
+        for field in fields_to_check:
+            count = c.execute("SELECT COUNT(*) FROM training_samples WHERE field=?", (field,)).fetchone()[0]
+            if count >= 5 and count % 3 == 0:
+                self._safe_train_with_rollback(field)
+
+        conn.close()
+        return {"auto_learned": auto_learned, "quarantined": quarantined}
+
+    # ── Quarantine management ──────────────────────────────────────────
+    def get_quarantine(self, limit=50):
+        """Restituisce i campioni in quarantena per review umano."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        rows = c.execute(
+            "SELECT id, doc_id, field, value, snippet, confidence, status, created_at "
+            "FROM quarantine WHERE status='pending' ORDER BY confidence DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+        conn.close()
+        return [
+            {"id": r[0], "doc_id": r[1], "field": r[2], "value": r[3],
+             "snippet": r[4], "confidence": r[5], "status": r[6], "created_at": r[7]}
+            for r in rows
+        ]
+
+    def approve_quarantine(self, qid):
+        """Approva un campione dalla quarantena → diventa training sample."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        row = c.execute("SELECT field, value, snippet FROM quarantine WHERE id=? AND status='pending'", (qid,)).fetchone()
+        if not row:
+            conn.close()
+            return {"status": "error", "message": "Campione non trovato o gia' processato"}
+        field, value, snippet = row
+        # Aggiungi al training
+        c.execute("INSERT INTO training_samples (field, text_snippet, correct_value) VALUES (?,?,?)",
+                  (field, snippet, value))
+        c.execute("UPDATE quarantine SET status='approved', reviewed_at=? WHERE id=?",
+                  (datetime.now().isoformat(), qid))
+        conn.commit()
+        # Check training trigger
+        count = c.execute("SELECT COUNT(*) FROM training_samples WHERE field=?", (field,)).fetchone()[0]
+        conn.close()
+        retrained = False
+        if count >= 5 and count % 3 == 0:
+            self._safe_train_with_rollback(field)
+            retrained = True
+        return {"status": "ok", "field": field, "sample_count": count, "retrained": retrained}
+
+    def reject_quarantine(self, qid):
+        """Rifiuta un campione dalla quarantena → non entra nel training."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        c.execute("UPDATE quarantine SET status='rejected', reviewed_at=? WHERE id=?",
+                  (datetime.now().isoformat(), qid))
         conn.commit()
         conn.close()
+        return {"status": "ok"}
+
+    def get_auto_learn_stats(self):
+        """Statistiche sull'auto-learning: quanti auto-learned, quarantined, skipped."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        stats = {}
+        for action in ('auto_learned', 'quarantined', 'skipped', 'skip'):
+            n = c.execute("SELECT COUNT(*) FROM auto_learn_log WHERE action=?", (action,)).fetchone()[0]
+            stats[action] = n
+        pending = c.execute("SELECT COUNT(*) FROM quarantine WHERE status='pending'").fetchone()[0]
+        stats["quarantine_pending"] = pending
+        # Per-field breakdown
+        field_stats = c.execute(
+            "SELECT field, action, COUNT(*) FROM auto_learn_log GROUP BY field, action"
+        ).fetchall()
+        by_field = {}
+        for f, a, n in field_stats:
+            if f not in by_field:
+                by_field[f] = {}
+            by_field[f][a] = n
+        stats["by_field"] = by_field
+        conn.close()
+        return stats
 
     # ── ML ────────────────────────────────────────────────────────────────
     def load_ml_models(self):
@@ -725,32 +1013,113 @@ class AppaltoExtractor:
         return None
 
     def train_field_classifier(self, field):
+        return self._safe_train_with_rollback(field)
+
+    def _safe_train_with_rollback(self, field):
+        """Training con protezione: testa il nuovo modello su holdout.
+        Se performa peggio del precedente, fa rollback."""
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         rows = c.execute(
             "SELECT text_snippet, correct_value FROM training_samples WHERE field=?", (field,)
         ).fetchall()
         conn.close()
+
         if len(rows) < 3:
             return None, f"Campioni insufficienti ({len(rows)}) per '{field}'. Servono almeno 3."
+
         texts = [r[0] for r in rows]
         labels = [r[1] for r in rows]
+
+        # ── Holdout validation (se abbastanza campioni) ──────────────
+        old_model = self.ml_models.get(field)
+        old_accuracy = None
+        new_accuracy = None
+
+        if len(rows) >= 6:
+            # Split 80/20 per validazione
+            import random
+            indices = list(range(len(rows)))
+            random.seed(42)
+            random.shuffle(indices)
+            split = max(2, int(len(indices) * 0.2))
+            test_idx = set(indices[:split])
+            train_idx = [i for i in indices if i not in test_idx]
+
+            train_texts = [texts[i] for i in train_idx]
+            train_labels = [labels[i] for i in train_idx]
+            test_texts = [texts[i] for i in test_idx]
+            test_labels = [labels[i] for i in test_idx]
+
+            # Solo se abbiamo almeno 2 classi nel train set
+            if len(set(train_labels)) >= 2 or len(set(labels)) == 1:
+                # Testa vecchio modello
+                if old_model:
+                    try:
+                        old_preds = old_model.predict(test_texts)
+                        old_accuracy = sum(1 for p, t in zip(old_preds, test_labels) if p == t) / len(test_labels)
+                    except:
+                        old_accuracy = None
+
+                # Allena nuovo su train set
+                try:
+                    test_pipeline = Pipeline([
+                        ("tfidf", TfidfVectorizer(ngram_range=(1, 3), max_features=8000, analyzer="char_wb")),
+                        ("clf", SGDClassifier(loss="hinge", max_iter=1000, random_state=42)),
+                    ])
+                    test_pipeline.fit(train_texts, train_labels)
+                    new_preds = test_pipeline.predict(test_texts)
+                    new_accuracy = sum(1 for p, t in zip(new_preds, test_labels) if p == t) / len(test_labels)
+                except:
+                    new_accuracy = None
+
+                # ── ROLLBACK CHECK ──────────────────────────────────
+                if old_accuracy is not None and new_accuracy is not None:
+                    if new_accuracy < old_accuracy - 0.05:  # Tolleranza 5%
+                        # Nuovo modello È PEGGIO → NON lo salviamo
+                        conn = sqlite3.connect(DB_PATH)
+                        c = conn.cursor()
+                        c.execute(
+                            "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
+                            ("system", field, "", new_accuracy, 0, "rollback",
+                             f"new_acc={new_accuracy:.2f} < old_acc={old_accuracy:.2f}, modello NON aggiornato")
+                        )
+                        conn.commit()
+                        conn.close()
+                        return old_model, f"⚠ Rollback: nuovo modello '{field}' ({new_accuracy:.0%}) peggio del precedente ({old_accuracy:.0%}). Mantenuto vecchio."
+
+        # ── Training finale su TUTTI i dati ──────────────────────────
         pipeline = Pipeline([
             ("tfidf", TfidfVectorizer(ngram_range=(1, 3), max_features=8000, analyzer="char_wb")),
             ("clf", SGDClassifier(loss="hinge", max_iter=1000, random_state=42)),
         ])
         pipeline.fit(texts, labels)
+
+        # Backup vecchio modello prima di sovrascrivere
         path = MODEL_DIR / f"model_{field}.pkl"
+        backup_path = MODEL_DIR / f"model_{field}_prev.pkl"
+        if path.exists():
+            import shutil
+            shutil.copy2(path, backup_path)
+
         with open(path, "wb") as f:
             pickle.dump(pipeline, f)
         self.ml_models[field] = pipeline
+
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        c.execute("INSERT INTO model_versions (field, version, samples_count, trained_at) VALUES (?,1,?,?)",
-                  (field, len(rows), datetime.now().isoformat()))
+        acc_str = f"{new_accuracy:.2f}" if new_accuracy else "N/A"
+        c.execute("INSERT INTO model_versions (field, version, accuracy, samples_count, trained_at) VALUES (?,1,?,?,?)",
+                  (field, new_accuracy, len(rows), datetime.now().isoformat()))
         conn.commit()
         conn.close()
-        return pipeline, f"Modello '{field}' addestrato su {len(rows)} campioni."
+
+        msg = f"Modello '{field}' addestrato su {len(rows)} campioni"
+        if new_accuracy:
+            msg += f" (accuracy holdout: {new_accuracy:.0%})"
+        if old_accuracy and new_accuracy:
+            msg += f" [prima: {old_accuracy:.0%}]"
+        return pipeline, msg
 
     def record_correction(self, doc_id, field, original, corrected, snippet=""):
         conn = sqlite3.connect(DB_PATH)
@@ -792,10 +1161,11 @@ class AppaltoExtractor:
 
         # Soglia più bassa = apprendimento più veloce
         count = self._get_sample_count(field)
+        retrained = False
         if count >= 5 and count % 3 == 0:
-            self.train_field_classifier(field)
-            return True
-        return False
+            self._safe_train_with_rollback(field)
+            retrained = True
+        return retrained
 
     def _save_document(self, doc_id, filename, text, extracted):
         conn = sqlite3.connect(DB_PATH)
@@ -823,13 +1193,20 @@ class AppaltoExtractor:
         docs = c.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
         corrections = c.execute("SELECT COUNT(*) FROM feedback_log").fetchone()[0]
         samples = c.execute("SELECT field, COUNT(*) FROM training_samples GROUP BY field").fetchall()
-        models = c.execute("SELECT field, samples_count, trained_at FROM model_versions ORDER BY trained_at DESC").fetchall()
+        models = c.execute("SELECT field, accuracy, samples_count, trained_at FROM model_versions ORDER BY trained_at DESC").fetchall()
+        # Auto-learn stats
+        auto_learned = c.execute("SELECT COUNT(*) FROM auto_learn_log WHERE action='auto_learned'").fetchone()[0]
+        quarantine_pending = c.execute("SELECT COUNT(*) FROM quarantine WHERE status='pending'").fetchone()[0]
+        rollbacks = c.execute("SELECT COUNT(*) FROM auto_learn_log WHERE action='rollback'").fetchone()[0]
         conn.close()
         return {
             "total_documents": docs,
             "total_corrections": corrections,
             "training_samples": {s[0]: s[1] for s in samples},
-            "trained_models": [{"field": m[0], "samples": m[1], "trained_at": m[2]} for m in models],
+            "trained_models": [{"field": m[0], "accuracy": m[1], "samples": m[2], "trained_at": m[3]} for m in models],
+            "auto_learned": auto_learned,
+            "quarantine_pending": quarantine_pending,
+            "rollbacks": rollbacks,
         }
 
     def get_history(self):

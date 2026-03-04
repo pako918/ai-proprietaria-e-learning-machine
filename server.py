@@ -233,6 +233,31 @@ if HAS_FASTAPI:
             raise HTTPException(404, "Documento non trovato")
         return data
 
+    # ── Quarantine & Auto-learn endpoints ─────────────────────────────
+
+    @app.get("/api/quarantine")
+    async def get_quarantine():
+        """Restituisce i campioni in quarantena in attesa di review."""
+        return extractor.get_quarantine()
+
+    @app.post("/api/quarantine/{qid}/approve")
+    async def approve_quarantine(qid: int):
+        """Approva un campione in quarantena → entra nel training set."""
+        result = extractor.approve_quarantine(qid)
+        if result.get("status") == "error":
+            raise HTTPException(404, result["message"])
+        return result
+
+    @app.post("/api/quarantine/{qid}/reject")
+    async def reject_quarantine(qid: int):
+        """Rifiuta un campione in quarantena → scartato."""
+        return extractor.reject_quarantine(qid)
+
+    @app.get("/api/auto-learn/stats")
+    async def auto_learn_stats():
+        """Statistiche sul safe auto-learning."""
+        return extractor.get_auto_learn_stats()
+
     if __name__ == "__main__":
         uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
 
