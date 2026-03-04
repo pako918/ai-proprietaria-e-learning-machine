@@ -1,0 +1,16 @@
+services:
+  appaltoai:
+    build: .
+    container_name: appaltoai
+    ports:
+      - "8000:8000"
+    volumes:
+      - appaltoai-data:/app/data
+      - appaltoai-models:/app/models
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1
+
+volumes:
+  appaltoai-data:
+  appaltoai-models:

@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AppaltoAI — Analisi Intelligente Gare d'Appalto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:wght@400;500&family=Outfit:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #0d1117; --ink-soft: #3d4451; --paper: #f7f5f0; --paper2: #edeae3;
+    --accent: #c8421a; --accent2: #e8813a; --gold: #b8960c; --ok: #1a7a4a;
+    --blue: #1565c0; --border: #d8d4cc; --shadow: rgba(13,17,23,0.08); --r: 8px;
+    --font-h: 'DM Serif Display', serif; --font-b: 'Outfit', sans-serif; --font-m: 'DM Mono', monospace;
+  }
+  body { font-family: var(--font-b); background: var(--paper); color: var(--ink); min-height: 100vh; display: flex; flex-direction: column; }
+
+  /* Header */
+  header { background: var(--ink); color: var(--paper); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 64px; position: sticky; top: 0; z-index: 100; border-bottom: 3px solid var(--accent); }
+  .logo { font-family: var(--font-h); font-size: 1.5rem; display: flex; align-items: center; gap: 10px; }
+  .logo-badge { background: var(--accent); color: white; font-family: var(--font-m); font-size: 0.6rem; padding: 2px 6px; border-radius: 3px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .header-nav { display: flex; gap: 4px; }
+  .nav-btn { background: none; border: 1px solid transparent; color: #aaa; padding: 6px 14px; border-radius: var(--r); cursor: pointer; font-family: var(--font-b); font-size: 0.85rem; transition: all .2s; }
+  .nav-btn:hover, .nav-btn.active { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.15); color: white; }
+  .nav-btn.active { color: var(--accent2); border-color: var(--accent); }
+
+  /* Layout */
+  .main { display: flex; flex: 1; }
+  .sidebar { width: 280px; background: var(--ink); color: var(--paper); padding: 1.5rem 1rem; display: flex; flex-direction: column; gap: 1.5rem; min-height: calc(100vh - 64px); flex-shrink: 0; }
+  .sidebar-section-title { font-family: var(--font-m); font-size: 0.65rem; letter-spacing: 0.15em; text-transform: uppercase; color: #666; margin-bottom: 0.5rem; }
+  .stat-card { background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); border-radius: var(--r); padding: 0.9rem 1rem; display: flex; flex-direction: column; gap: 2px; }
+  .stat-value { font-family: var(--font-h); font-size: 2rem; color: var(--accent2); line-height: 1; }
+  .stat-label { font-size: 0.75rem; color: #888; }
+  .model-badge { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: rgba(255,255,255,.04); border-radius: 6px; font-size: 0.78rem; color: #bbb; }
+  .model-dot { width: 7px; height: 7px; border-radius: 50%; background: #333; flex-shrink: 0; }
+  .model-dot.active { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+  .history-item { padding: 8px 10px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; transition: all .15s; display: flex; flex-direction: column; gap: 2px; }
+  .history-item:hover { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); }
+  .history-item-name { font-size: 0.78rem; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .history-item-meta { font-family: var(--font-m); font-size: 0.65rem; color: #666; }
+  .content { flex: 1; padding: 2rem; max-width: 1050px; margin: 0 auto; width: 100%; }
+  .page { display: none; } .page.active { display: block; }
+
+  /* Upload */
+  .upload-area { border: 2px dashed var(--border); border-radius: 12px; padding: 4rem 2rem; text-align: center; cursor: pointer; transition: all .25s; background: white; position: relative; overflow: hidden; }
+  .upload-area::before { content: ''; position: absolute; inset: 0; background: linear-gradient(135deg, rgba(200,66,26,.03) 0%, transparent 50%); pointer-events: none; }
+  .upload-area:hover, .upload-area.dragover { border-color: var(--accent); background: #fff9f7; }
+  .upload-icon { font-size: 3rem; margin-bottom: 1rem; display: block; }
+  .upload-title { font-family: var(--font-h); font-size: 1.4rem; color: var(--ink); margin-bottom: 0.5rem; }
+  .upload-sub { color: var(--ink-soft); font-size: 0.9rem; }
+  .upload-btn { margin-top: 1.5rem; display: inline-block; background: var(--accent); color: white; padding: 10px 28px; border-radius: var(--r); font-weight: 500; font-size: 0.9rem; cursor: pointer; border: none; font-family: var(--font-b); transition: background .2s; }
+  .upload-btn:hover { background: #a8340f; }
+
+  /* Processing */
+  .processing-overlay { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 4rem; gap: 1rem; }
+  .processing-overlay.visible { display: flex; }
+  .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .processing-steps { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 340px; }
+  .proc-step { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--ink-soft); padding: 6px 12px; border-radius: 6px; background: white; border: 1px solid var(--border); opacity: 0.4; transition: opacity .3s; }
+  .proc-step.done { opacity: 1; color: var(--ok); border-color: #c8f0dc; background: #f0fff8; }
+  .proc-step.active { opacity: 1; color: var(--accent); border-color: #fdd5c8; background: #fff5f2; }
+
+  /* Risultati header */
+  .results-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.2rem; flex-wrap: wrap; gap: 1rem; }
+  .results-title { font-family: var(--font-h); font-size: 1.6rem; }
+  .confidence-bar-wrap { display: flex; align-items: center; gap: 10px; }
+  .confidence-bar { width: 120px; height: 8px; background: var(--paper2); border-radius: 4px; overflow: hidden; }
+  .confidence-fill { height: 100%; border-radius: 4px; transition: width 1s ease; }
+  .confidence-fill.high { background: var(--ok); } .confidence-fill.mid { background: var(--gold); } .confidence-fill.low { background: var(--accent); }
+  .confidence-pct { font-family: var(--font-m); font-size: 0.8rem; color: var(--ink-soft); }
+  .actions-bar { margin: 0 0 1.5rem; display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .btn { padding: 8px 18px; border-radius: var(--r); border: 1px solid var(--border); background: white; cursor: pointer; font-family: var(--font-b); font-size: 0.82rem; color: var(--ink); display: flex; align-items: center; gap: 6px; transition: all .2s; font-weight: 500; }
+  .btn:hover { background: var(--paper2); border-color: var(--ink-soft); }
+  .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
+  .btn.primary:hover { background: #a8340f; }
+  .btn.success { background: var(--ok); color: white; border-color: var(--ok); }
+
+  /* Sezioni risultato */
+  .result-section { margin-bottom: 1.5rem; }
+  .section-header { font-family: var(--font-m); font-size: 0.68rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.6rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
+  .result-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; }
+  @media (max-width: 700px) { .result-grid { grid-template-columns: 1fr; } }
+
+  /* Card campo */
+  .result-card { background: white; border: 1px solid var(--border); border-radius: var(--r); padding: 0.9rem 1.1rem; display: flex; flex-direction: column; gap: 4px; transition: all .2s; position: relative; }
+  .result-card:hover { border-color: var(--accent2); box-shadow: 0 2px 8px var(--shadow); }
+  .result-card.full-width { grid-column: 1 / -1; }
+  .result-card.highlight { border-left: 3px solid var(--accent); }
+  .card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .result-label { font-family: var(--font-m); font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: center; gap: 5px; flex: 1; }
+  .result-label .icon { font-size: 0.75rem; }
+  .card-badges { display: flex; gap: 4px; align-items: center; }
+  .method-badge { font-size: 0.55rem; padding: 1px 5px; border-radius: 3px; font-family: var(--font-m); letter-spacing: 0.04em; font-weight: 500; }
+  .method-badge.rules { background: #e8f5e9; color: #2e7d32; }
+  .method-badge.ml { background: #e3f2fd; color: #1565c0; }
+  .method-badge.corrected { background: #fff3e0; color: #e65100; }
+  .result-value { font-size: 0.95rem; color: var(--ink); font-weight: 500; line-height: 1.4; }
+  .result-value.money { font-family: var(--font-m); font-size: 1.05rem; color: var(--ok); font-weight: 600; }
+  .result-value.missing { color: #bbb; font-style: italic; font-weight: 400; font-size: 0.85rem; }
+  .result-value.mono { font-family: var(--font-m); }
+  .result-value.bool-yes { color: var(--ok); } .result-value.bool-no { color: #bbb; }
+  .tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tag { background: var(--paper2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 10px; font-size: 0.75rem; color: var(--ink-soft); }
+  .tag.cat { background: #fff0e0; border-color: #f5c080; color: #a05000; }
+
+  /* Card actions */
+  .card-actions { display: flex; gap: 3px; }
+  .card-act { background: none; border: 1px solid transparent; cursor: pointer; font-size: 0.7rem; color: #bbb; padding: 2px 5px; border-radius: 4px; transition: all .15s; opacity: 0; }
+  .result-card:hover .card-act { opacity: 1; }
+  .card-act:hover { background: var(--paper2); border-color: var(--border); color: var(--ink); }
+  .card-act.active { opacity: 1; background: var(--paper2); color: var(--accent); border-color: var(--accent); }
+
+  /* Snippet viewer */
+  .snippet-panel { display: none; margin-top: 6px; padding: 10px; background: #fafaf8; border: 1px solid var(--border); border-radius: 6px; font-size: 0.76rem; line-height: 1.6; color: var(--ink-soft); max-height: 180px; overflow-y: auto; font-family: var(--font-m); word-break: break-word; }
+  .snippet-panel.open { display: block; animation: fadeIn .2s ease; }
+  .snippet-panel mark { background: #fff3cd; padding: 1px 3px; border-radius: 2px; font-weight: 600; color: var(--ink); }
+
+  /* Edit panel */
+  .edit-panel { display: none; margin-top: 6px; padding: 12px; background: #fdf8f5; border: 1px solid var(--accent2); border-radius: 8px; }
+  .edit-panel.open { display: block; animation: fadeIn .2s ease; }
+  .edit-context { margin-bottom: 8px; padding: 8px; background: white; border: 1px dashed var(--border); border-radius: 6px; font-size: 0.74rem; line-height: 1.6; color: var(--ink-soft); max-height: 120px; overflow-y: auto; font-family: var(--font-m); cursor: text; user-select: text; }
+  .edit-context mark { background: #ffcdd2; padding: 1px 3px; border-radius: 2px; }
+  .edit-hint { font-size: 0.7rem; color: #999; margin-bottom: 5px; display: flex; align-items: center; gap: 4px; }
+  .edit-row { display: flex; gap: 6px; align-items: center; }
+  .edit-input { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-family: var(--font-b); font-size: 0.88rem; color: var(--ink); outline: none; }
+  .edit-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(200,66,26,.1); }
+  .btn-save-edit { background: var(--ok); color: white; border: none; padding: 7px 14px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-family: var(--font-b); font-weight: 500; transition: background .2s; }
+  .btn-save-edit:hover { background: #15693e; }
+  .btn-cancel-edit { background: var(--paper2); color: var(--ink-soft); border: 1px solid var(--border); padding: 7px 12px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-family: var(--font-b); }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+
+  /* Note */
+  .note-item { background: #fff8f0; border: 1px solid #f5c080; border-radius: 6px; padding: 8px 12px; font-size: 0.82rem; color: #7a4a00; display: flex; gap: 8px; align-items: flex-start; }
+
+  /* Tables */
+  .lotti-table, .criteri-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 4px; }
+  .lotti-table th, .criteri-table th { text-align: left; font-family: var(--font-m); font-size: 0.65rem; color: var(--ink-soft); padding: 4px 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.08em; }
+  .lotti-table td, .criteri-table td { padding: 5px 8px; border-bottom: 1px solid #eee; color: var(--ink); }
+  .criteri-pts { font-family: var(--font-m); font-weight: 600; color: var(--accent); }
+
+  /* Learning section */
+  .learn-section { background: linear-gradient(135deg, #0d1117, #1a2230); border-radius: 12px; padding: 1.5rem; color: white; margin-top: 1.5rem; border: 1px solid rgba(255,255,255,.08); }
+  .learn-title { font-family: var(--font-h); font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
+  .learn-field-row { display: flex; align-items: center; gap: 12px; font-size: 0.78rem; margin-bottom: 6px; }
+  .learn-field-name { width: 180px; color: #aaa; font-family: var(--font-m); font-size: 0.72rem; }
+  .learn-bar-wrap { flex: 1; background: rgba(255,255,255,.08); border-radius: 4px; height: 6px; overflow: hidden; }
+  .learn-bar-fill { height: 100%; background: var(--accent2); border-radius: 4px; transition: width 1s ease; }
+  .learn-bar-fill.ready { background: var(--ok); }
+  .learn-count { color: #888; font-family: var(--font-m); font-size: 0.68rem; width: 80px; text-align: right; }
+
+  /* Training page */
+  .training-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .training-card { background: white; border: 1px solid var(--border); border-radius: var(--r); padding: 1.2rem; }
+  .training-card h3 { font-family: var(--font-h); font-size: 1rem; margin-bottom: 0.8rem; }
+  .training-card p { font-size: 0.85rem; color: var(--ink-soft); margin-bottom: 0.8rem; }
+  .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 0.7rem; }
+  .form-label { font-size: 0.75rem; color: var(--ink-soft); font-family: var(--font-m); }
+  .form-control { border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-family: var(--font-b); font-size: 0.88rem; color: var(--ink); outline: none; width: 100%; }
+  .form-control:focus { border-color: var(--accent); }
+  .form-textarea { min-height: 80px; resize: vertical; }
+
+  /* Toast */
+  .toast-container { position: fixed; bottom: 2rem; right: 2rem; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
+  .toast { background: var(--ink); color: white; padding: 10px 16px; border-radius: 8px; font-size: 0.83rem; border-left: 3px solid var(--accent); animation: slideIn .3s ease; display: flex; align-items: center; gap: 8px; max-width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,.3); }
+  .toast.ok { border-color: var(--ok); }
+  @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* Responsive */
+  @media (max-width: 900px) { .sidebar { width: 220px; } .training-grid { grid-template-columns: 1fr; } }
+  @media (max-width: 640px) { .sidebar { display: none; } .content { padding: 1rem; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo"><span>AppaltoAI</span><span class="logo-badge">ML v2</span></div>
+  <nav class="header-nav">
+    <button class="nav-btn active" onclick="showPage('analyze', this)">📄 Analizza</button>
+    <button class="nav-btn" onclick="showPage('history', this)">🗂 Storico</button>
+    <button class="nav-btn" onclick="showPage('training', this)">🧠 Apprendimento</button>
+  </nav>
+</header>
+
+<div class="main">
+<aside class="sidebar">
+  <div>
+    <div class="sidebar-section-title">Statistiche AI</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <div class="stat-card"><div class="stat-value" id="stat-docs">0</div><div class="stat-label">PDF analizzati</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-corrections">0</div><div class="stat-label">Correzioni apprese</div></div>
+    </div>
+  </div>
+  <div>
+    <div class="sidebar-section-title">Modelli ML Attivi</div>
+    <div style="display:flex;flex-direction:column;gap:4px" id="models-list">
+      <div class="model-badge"><div class="model-dot"></div>Nessun modello</div>
+    </div>
+  </div>
+  <div style="flex:1">
+    <div class="sidebar-section-title">Ultimi PDF</div>
+    <div style="display:flex;flex-direction:column;gap:4px" id="sidebar-history">
+      <div style="font-size:0.75rem;color:#555">Nessun documento</div>
+    </div>
+  </div>
+  <div style="font-size:0.7rem;color:#444;padding-top:1rem;border-top:1px solid rgba(255,255,255,.06)">
+    💡 Ogni correzione insegna all'AI <strong>dove</strong> trovare i dati nei PDF
+  </div>
+</aside>
+
+<div class="content">
+
+  <!-- PAGE: ANALIZZA -->
+  <div class="page active" id="page-analyze">
+    <div id="upload-section">
+      <div class="upload-area" id="upload-area" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
+        <span class="upload-icon">📋</span>
+        <div class="upload-title">Carica un PDF di Gara d'Appalto</div>
+        <div class="upload-sub">Trascina qui il file oppure clicca per selezionarlo</div>
+        <button class="upload-btn" onclick="document.getElementById('file-input').click()">Scegli PDF</button>
+        <input type="file" id="file-input" accept=".pdf" style="display:none" onchange="handleFileSelect(event)"/>
+      </div>
+      <div style="text-align:center;color:var(--ink-soft);font-size:0.8rem;margin-top:1rem">
+        oppure incolla il testo del bando:
+        <button class="btn" style="margin:0.5rem auto;display:flex;" onclick="showTextInput()">📝 Inserisci testo</button>
+      </div>
+      <div id="text-input-area" style="display:none;margin-top:1rem">
+        <textarea class="form-control form-textarea" id="raw-text-input" placeholder="Incolla qui il testo del bando di gara..." style="min-height:200px"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn primary" onclick="analyzeText()">🔍 Analizza Testo</button>
+          <button class="btn" onclick="hideTextInput()">Annulla</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="processing-overlay" id="processing-overlay">
+      <div class="spinner"></div>
+      <div style="font-family:var(--font-h);font-size:1.2rem;color:var(--ink)">Analisi in corso...</div>
+      <div class="processing-steps">
+        <div class="proc-step" id="step-1"><span>📂</span> Lettura PDF</div>
+        <div class="proc-step" id="step-2"><span>🔍</span> Applicazione pattern (regex)</div>
+        <div class="proc-step" id="step-3"><span>🧠</span> Modelli ML (fallback)</div>
+        <div class="proc-step" id="step-4"><span>📍</span> Mapping contesto snippet</div>
+        <div class="proc-step" id="step-5"><span>✅</span> Risultato con confidenza</div>
+      </div>
+    </div>
+
+    <div id="results-section" style="display:none">
+      <div class="results-header">
+        <div>
+          <div class="results-title" id="result-filename">Risultati</div>
+          <div style="font-size:0.78rem;color:var(--ink-soft);margin-top:2px" id="result-meta"></div>
+        </div>
+        <div class="confidence-bar-wrap">
+          <span style="font-size:0.75rem;color:var(--ink-soft)">Confidenza:</span>
+          <div class="confidence-bar"><div class="confidence-fill" id="confidence-fill" style="width:0%"></div></div>
+          <span class="confidence-pct" id="confidence-pct">0%</span>
+        </div>
+      </div>
+      <div class="actions-bar">
+        <button class="btn primary" onclick="exportJSON()">⬇️ JSON</button>
+        <button class="btn" onclick="exportCSV()">📊 CSV</button>
+        <button class="btn" onclick="copyResults()">📋 Copia</button>
+        <button class="btn" onclick="resetAnalysis()">🔄 Nuovo PDF</button>
+      </div>
+      <div id="results-container"></div>
+      <div id="notes-section" style="display:none;margin-top:1.2rem">
+        <div style="font-family:var(--font-m);font-size:0.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:0.5rem">⚠ Aspetti da verificare</div>
+        <div id="notes-list" style="display:flex;flex-direction:column;gap:6px"></div>
+      </div>
+      <div class="learn-section" id="learn-section">
+        <div class="learn-title">🧠 Stato Apprendimento</div>
+        <div id="learn-progress"></div>
+        <div style="margin-top:1rem;font-size:0.76rem;color:#888;line-height:1.5">
+          Clicca <strong>✏️</strong> su un campo per correggerlo. L'AI memorizza il <strong>contesto testuale</strong>
+          e impara dove cercare quell'informazione nei prossimi PDF.
+          Dopo <strong>5 correzioni</strong> per campo, il modello ML si addestra automaticamente.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- PAGE: STORICO -->
+  <div class="page" id="page-history">
+    <h2 style="font-family:var(--font-h);font-size:1.6rem;margin-bottom:0.5rem">Storico Analisi</h2>
+    <p style="color:var(--ink-soft);font-size:0.9rem;margin-bottom:1.5rem">Tutti i PDF analizzati</p>
+    <div id="history-list"><div style="color:var(--ink-soft);font-size:0.9rem">Nessun documento.</div></div>
+  </div>
+
+  <!-- PAGE: TRAINING -->
+  <div class="page" id="page-training">
+    <h2 style="font-family:var(--font-h);font-size:1.6rem;margin-bottom:0.5rem">Centro Apprendimento AI</h2>
+    <p style="color:var(--ink-soft);font-size:0.9rem;margin-bottom:1.5rem">Insegna all'AI dove trovare i dati, avvia il training e monitora i modelli</p>
+    <div class="training-grid">
+      <div class="training-card" style="grid-column:1/-1">
+        <h3>➕ Aggiungi Campione di Training</h3>
+        <p>Incolla il passaggio del PDF dove si trova l'informazione e indica il valore corretto.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-row"><label class="form-label">Campo</label><select class="form-control" id="train-field"></select></div>
+          <div class="form-row"><label class="form-label">Valore corretto</label><input class="form-control" id="train-value" placeholder="Es: Comune di Milano"/></div>
+          <div class="form-row" style="grid-column:1/-1"><label class="form-label">Testo dal PDF (snippet)</label><textarea class="form-control form-textarea" id="train-snippet" placeholder="Incolla il passaggio del PDF..."></textarea></div>
+        </div>
+        <button class="btn success" onclick="addTrainingSample()">💾 Salva Campione</button>
+      </div>
+      <div class="training-card">
+        <h3>📊 Stato Modelli</h3>
+        <div id="models-status" style="display:flex;flex-direction:column;gap:8px;font-size:0.85rem"><div style="color:var(--ink-soft)">Caricamento...</div></div>
+      </div>
+      <div class="training-card">
+        <h3>🚀 Training Manuale</h3>
+        <p>Forza il riadddestramento di un modello.</p>
+        <div class="form-row"><select class="form-control" id="retrain-field"></select></div>
+        <button class="btn primary" onclick="retrainModel()">🧠 Avvia Training</button>
+        <div id="train-result" style="margin-top:0.8rem;font-size:0.82rem;color:var(--ink-soft)"></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<div class="toast-container" id="toast-container"></div>
+
+<script>
+const API = window.location.origin;
+let currentResult = null;
+let currentDocId = null;
+let currentSnippets = {};
+let currentMethods = {};
+
+// ═══════════════════════════════════════════════════════════════
+// CONFIGURAZIONE CAMPI — mappati sull'output reale dell'AI
+// ═══════════════════════════════════════════════════════════════
+const SECTIONS = [
+  { title: "Identificativi", icon: "🔑", fields: [
+    { key: 'cig', label: 'CIG', icon: '🔑', mono: true },
+    { key: 'cup', label: 'CUP', icon: '📌', mono: true },
+    { key: 'cpv', label: 'Codice CPV', icon: '🗂', mono: true },
+    { key: 'nuts_code', label: 'Codice NUTS', icon: '🌍', mono: true },
+  ]},
+  { title: "Soggetti", icon: "🏛", fields: [
+    { key: 'stazione_appaltante', label: 'Stazione Appaltante', icon: '🏛', highlight: true },
+    { key: 'amministrazione_delegante', label: 'Amm. Delegante', icon: '🏢' },
+    { key: 'rup', label: 'RUP', icon: '👤' },
+    { key: 'responsabile_procedimento', label: 'Resp. Procedimento', icon: '👤' },
+  ]},
+  { title: "Oggetto e Procedura", icon: "📋", fields: [
+    { key: 'oggetto_appalto', label: 'Oggetto Appalto', icon: '📋', highlight: true, fullWidth: true },
+    { key: 'tipo_procedura', label: 'Tipo Procedura', icon: '⚖️' },
+    { key: 'criterio_aggiudicazione', label: 'Criterio Aggiudicazione', icon: '🎯', fullWidth: true },
+    { key: 'is_accordo_quadro', label: 'Accordo Quadro', icon: '📑', boolean: true },
+    { key: 'numero_lotti', label: 'Numero Lotti', icon: '📊' },
+  ]},
+  { title: "Importi", icon: "💶", fields: [
+    { key: 'importo_totale', label: 'Importo Totale', icon: '💶', money: true },
+    { key: 'importo_base_gara', label: 'Base di Gara', icon: '💰', money: true },
+    { key: 'garanzia_provvisoria', label: 'Garanzia Provvisoria', icon: '🔒', money: true },
+    { key: 'garanzia_definitiva', label: 'Garanzia Definitiva', icon: '🔒' },
+    { key: 'contributo_anac', label: 'Contributo ANAC', icon: '🏦', money: true },
+    { key: 'imposta_bollo', label: 'Imposta di Bollo', icon: '📄', money: true },
+  ]},
+  { title: "Punteggi OEPV", icon: "⭐", fields: [
+    { key: 'punteggio_tecnica', label: 'Punti Tecnica', icon: '⭐' },
+    { key: 'punteggio_economica', label: 'Punti Economica', icon: '💰' },
+    { key: 'soglia_sbarramento_tecnica', label: 'Soglia Sbarramento', icon: '⛔' },
+    { key: 'pti_giovani_professionisti', label: 'Bonus Giovani Prof.', icon: '👨‍🎓' },
+    { key: 'pti_iso_9001', label: 'Bonus ISO 9001', icon: '📋' },
+    { key: 'pti_parita_genere', label: 'Bonus Parità Genere', icon: '⚖️' },
+  ]},
+  { title: "Scadenze e Durata", icon: "📅", fields: [
+    { key: 'termine_chiarimenti', label: 'Termine Chiarimenti', icon: '❓' },
+    { key: 'durata_contratto', label: 'Durata Contratto', icon: '⏱' },
+    { key: 'piattaforma_url', label: 'Piattaforma', icon: '🌐', fullWidth: true },
+  ]},
+  { title: "Requisiti e Categorie", icon: "📊", fields: [
+    { key: 'fatturato_minimo', label: 'Fatturato Minimo', icon: '📈', money: true },
+    { key: 'periodo_requisiti_anni', label: 'Periodo Requisiti', icon: '📅' },
+    { key: 'categorie_ingegneria', label: 'Categorie Ingegneria', icon: '🏗', isList: true },
+  ]},
+  { title: "Condizioni e Clausole", icon: "📝", fields: [
+    { key: 'subappalto', label: 'Subappalto', icon: '🔗', fullWidth: true },
+    { key: 'avvalimento', label: 'Avvalimento', icon: '🤝', fullWidth: true },
+    { key: 'verifica_anomalia', label: 'Verifica Anomalia', icon: '📉', fullWidth: true },
+    { key: 'finanziamento', label: 'Fonte Finanziamento', icon: '🇪🇺' },
+    { key: 'revisione_prezzi', label: 'Revisione Prezzi', icon: '📊', boolean: true },
+    { key: 'conformita_cam', label: 'Conformità CAM', icon: '🌿', boolean: true },
+    { key: 'inversione_procedimentale', label: 'Inversione Proc.', icon: '🔄', boolean: true },
+  ]},
+];
+
+const ALL_FIELDS = SECTIONS.flatMap(s => s.fields.map(f => f.key));
+const FIELD_MAP = {};
+SECTIONS.forEach(s => s.fields.forEach(f => FIELD_MAP[f.key] = f));
+
+function populateFieldSelects() {
+  ['train-field','retrain-field'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = ALL_FIELDS.map(k => `<option value="${k}">${FIELD_MAP[k].icon} ${FIELD_MAP[k].label}</option>`).join('');
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NAVIGAZIONE
+// ═══════════════════════════════════════════════════════════════
+function showPage(name, btn) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(`page-${name}`).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if (name === 'history') loadHistory();
+  if (name === 'training') loadTrainingStats();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UPLOAD & ANALISI
+// ═══════════════════════════════════════════════════════════════
+function handleDragOver(e){ e.preventDefault(); document.getElementById('upload-area').classList.add('dragover'); }
+function handleDragLeave(){ document.getElementById('upload-area').classList.remove('dragover'); }
+function handleDrop(e){ e.preventDefault(); document.getElementById('upload-area').classList.remove('dragover'); const f=e.dataTransfer.files[0]; if(f?.type==='application/pdf') processFile(f); else showToast('Solo PDF','error'); }
+function handleFileSelect(e){ const f=e.target.files[0]; if(f) processFile(f); }
+function showTextInput(){ document.getElementById('text-input-area').style.display='block'; }
+function hideTextInput(){ document.getElementById('text-input-area').style.display='none'; }
+
+async function analyzeText() {
+  const text = document.getElementById('raw-text-input').value.trim();
+  if (!text || text.length < 30) { showToast('Testo troppo breve','error'); return; }
+  showProcessing();
+  try {
+    await stepProgress();
+    const res = await fetch(`${API}/api/extract-text`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text, filename:'testo_manuale.txt'}) });
+    showResults(await res.json(), 'Testo Manuale');
+  } catch(e) { hideProcessing(); showToast('Errore: '+e.message,'error'); }
+}
+
+async function processFile(file) {
+  showProcessing(); await stepProgress();
+  const fd = new FormData(); fd.append('file', file);
+  try {
+    const res = await fetch(`${API}/api/extract`, {method:'POST', body:fd});
+    if(!res.ok){ const e=await res.json(); throw new Error(e.detail||'Errore'); }
+    showResults(await res.json(), file.name);
+  } catch(e) { hideProcessing(); showToast('⚠ '+e.message,'error'); }
+}
+
+function showProcessing() {
+  document.getElementById('upload-section').style.display='none';
+  document.getElementById('results-section').style.display='none';
+  document.getElementById('processing-overlay').classList.add('visible');
+  const steps=['step-1','step-2','step-3','step-4','step-5'];
+  steps.forEach((s,i) => {
+    setTimeout(() => {
+      document.getElementById(s).classList.add('active');
+      if(i>0) { document.getElementById(steps[i-1]).classList.remove('active'); document.getElementById(steps[i-1]).classList.add('done'); }
+    }, i*550);
+  });
+}
+async function stepProgress(){ return new Promise(r=>setTimeout(r,2800)); }
+function hideProcessing() {
+  document.getElementById('processing-overlay').classList.remove('visible');
+  document.querySelectorAll('.proc-step').forEach(s=>s.classList.remove('active','done'));
+  document.getElementById('upload-section').style.display='block';
+}
+function resetAnalysis() {
+  hideProcessing();
+  document.getElementById('results-section').style.display='none';
+  document.getElementById('upload-section').style.display='block';
+  currentResult=null; currentDocId=null; currentSnippets={}; currentMethods={};
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RISULTATI
+// ═══════════════════════════════════════════════════════════════
+function showResults(data, filename) {
+  document.getElementById('processing-overlay').classList.remove('visible');
+  document.getElementById('upload-section').style.display='none';
+  document.getElementById('results-section').style.display='block';
+
+  currentResult = data;
+  currentDocId = data._doc_id;
+  currentSnippets = data._snippets || {};
+  currentMethods = data._methods || {};
+
+  document.getElementById('result-filename').textContent = filename;
+  const ml = data._extraction_method==='hybrid' ? '🔵 Ibrido (Regole+ML)' : '🟢 Regole';
+  document.getElementById('result-meta').textContent = `${ml} · ${new Date(data._timestamp).toLocaleString('it-IT')}`;
+
+  const conf = data._confidence || 0;
+  const fill = document.getElementById('confidence-fill');
+  fill.style.width = conf+'%';
+  fill.className = 'confidence-fill '+(conf>=65?'high':conf>=35?'mid':'low');
+  document.getElementById('confidence-pct').textContent = conf.toFixed(1)+'%';
+
+  const container = document.getElementById('results-container');
+  container.innerHTML = '';
+
+  // Sezioni campi
+  SECTIONS.forEach(section => {
+    const sec = document.createElement('div');
+    sec.className = 'result-section';
+    sec.innerHTML = `<div class="section-header">${section.icon} ${section.title}</div>`;
+    const grid = document.createElement('div');
+    grid.className = 'result-grid';
+
+    section.fields.forEach(cfg => {
+      const val = data[cfg.key];
+      const method = currentMethods[cfg.key];
+      const snippet = currentSnippets[cfg.key];
+      const empty = val===null||val===undefined||val===''||val===0||(Array.isArray(val)&&val.length===0);
+
+      const card = document.createElement('div');
+      card.className = 'result-card'+(cfg.highlight?' highlight':'')+(cfg.fullWidth?' full-width':'');
+      card.dataset.field = cfg.key;
+
+      let badge = '';
+      if(method==='ml') badge='<span class="method-badge ml">ML</span>';
+      else if(method==='corrected') badge='<span class="method-badge corrected">CORRETTO</span>';
+      else if(method) badge='<span class="method-badge rules">REGOLE</span>';
+
+      let valHtml;
+      if(empty) valHtml='<div class="result-value missing">— Non rilevato</div>';
+      else if(cfg.boolean) valHtml=val?'<div class="result-value bool-yes">✅ Sì</div>':'<div class="result-value bool-no">❌ No</div>';
+      else if(cfg.isList&&Array.isArray(val)) valHtml=`<div class="tags-wrap">${val.map(v=>`<span class="tag cat">${v}</span>`).join('')}</div>`;
+      else if(cfg.money) valHtml=`<div class="result-value money">${val}</div>`;
+      else if(cfg.mono) valHtml=`<div class="result-value mono">${Array.isArray(val)?val.join(', '):val}</div>`;
+      else valHtml=`<div class="result-value">${val}</div>`;
+
+      const snippetBtn = snippet ? `<button class="card-act" onclick="toggleSnippet('${cfg.key}')" title="Vedi contesto PDF">📄</button>` : '';
+      const editBtn = `<button class="card-act" onclick="toggleEdit('${cfg.key}')" title="Correggi">✏️</button>`;
+
+      card.innerHTML = `
+        <div class="card-top">
+          <div class="result-label"><span class="icon">${cfg.icon}</span>${cfg.label}</div>
+          <div class="card-badges">${badge}<div class="card-actions">${snippetBtn}${editBtn}</div></div>
+        </div>
+        ${valHtml}
+        <div class="snippet-panel" id="snippet-${cfg.key}"></div>
+        <div class="edit-panel" id="edit-${cfg.key}"></div>`;
+      grid.appendChild(card);
+    });
+    sec.appendChild(grid);
+    container.appendChild(sec);
+  });
+
+  // Scadenze dettagliate
+  if(data.scadenze && Object.values(data.scadenze).some(v=>v)){
+    const sec=document.createElement('div'); sec.className='result-section';
+    sec.innerHTML='<div class="section-header">📅 Scadenze Dettagliate</div>';
+    const grid=document.createElement('div'); grid.className='result-grid';
+    Object.entries(data.scadenze).forEach(([k,v])=>{
+      if(!v) return;
+      const c=document.createElement('div'); c.className='result-card';
+      c.innerHTML=`<div class="result-label"><span class="icon">📅</span>${k.replace(/_/g,' ')}</div><div class="result-value mono">${v}</div>`;
+      grid.appendChild(c);
+    });
+    sec.appendChild(grid); container.appendChild(sec);
+  }
+
+  // Lotti
+  if(data.lotti&&data.lotti.length>0){
+    const sec=document.createElement('div'); sec.className='result-section';
+    sec.innerHTML='<div class="section-header">📦 Dettaglio Lotti</div>';
+    let h=`<div class="result-card full-width"><table class="lotti-table"><thead><tr><th>#</th><th>CIG</th><th>Importo</th><th>Descrizione</th></tr></thead><tbody>`;
+    data.lotti.forEach(l=>{ h+=`<tr><td><strong>Lotto ${l.numero}</strong></td><td style="font-family:var(--font-m)">${l.cig||'—'}</td><td style="color:var(--ok);font-family:var(--font-m)">${l.importo||'—'}</td><td style="font-size:0.8rem">${l.descrizione||'—'}</td></tr>`; });
+    h+='</tbody></table></div>';
+    const w=document.createElement('div'); w.className='result-grid'; w.innerHTML=h;
+    sec.appendChild(w); container.appendChild(sec);
+  }
+
+  // Criteri tecnici
+  if(data.criteri_tecnici&&data.criteri_tecnici.length>0){
+    const sec=document.createElement('div'); sec.className='result-section';
+    sec.innerHTML='<div class="section-header">📊 Criteri Tecnici</div>';
+    let h=`<div class="result-card full-width"><table class="criteri-table"><thead><tr><th>Codice</th><th>Criterio</th><th>Punti</th></tr></thead><tbody>`;
+    data.criteri_tecnici.forEach(c=>{ h+=`<tr><td style="font-family:var(--font-m);font-weight:600">${c.codice}</td><td>${c.nome}</td><td class="criteri-pts">${c.punteggio}</td></tr>`; });
+    h+='</tbody></table></div>';
+    const w=document.createElement('div'); w.className='result-grid'; w.innerHTML=h;
+    sec.appendChild(w); container.appendChild(sec);
+  }
+
+  // Note operative
+  if(data.note_operative&&data.note_operative.length>0){
+    const sec=document.createElement('div'); sec.className='result-section';
+    sec.innerHTML='<div class="section-header">⚠ Note Operative</div>';
+    const list=document.createElement('div'); list.style.cssText='display:flex;flex-direction:column;gap:6px';
+    data.note_operative.forEach(n=>{ const d=document.createElement('div'); d.className='note-item'; d.textContent=n; list.appendChild(d); });
+    sec.appendChild(list); container.appendChild(sec);
+  }
+
+  loadStats(); loadLearningProgress();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SNIPPET VIEWER
+// ═══════════════════════════════════════════════════════════════
+function toggleSnippet(field) {
+  const p=document.getElementById(`snippet-${field}`);
+  const open=p.classList.contains('open');
+  document.querySelectorAll('.snippet-panel.open').forEach(x=>x.classList.remove('open'));
+  if(!open){ p.innerHTML=highlightValue(currentSnippets[field]||'',currentResult[field]); p.classList.add('open'); }
+}
+function highlightValue(text, value) {
+  if(!text) return '<em style="color:#bbb">Nessun contesto</em>';
+  let html=escapeHtml(text);
+  if(value){
+    const vs=String(Array.isArray(value)?value[0]:value);
+    try{ html=html.replace(new RegExp(`(${escapeRegExp(vs)})`,'gi'),'<mark>$1</mark>'); }catch(e){}
+    if(!html.includes('<mark>')&&vs.length>5){
+      vs.split(/\s+/).filter(w=>w.length>3).forEach(w=>{
+        try{ html=html.replace(new RegExp(`(${escapeRegExp(w)})`,'gi'),'<mark>$1</mark>'); }catch(e){}
+      });
+    }
+  }
+  return html;
+}
+function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+
+// ═══════════════════════════════════════════════════════════════
+// CORREZIONI — con contesto intelligente
+// ═══════════════════════════════════════════════════════════════
+function toggleEdit(field) {
+  const p=document.getElementById(`edit-${field}`);
+  const open=p.classList.contains('open');
+  document.querySelectorAll('.edit-panel.open').forEach(x=>x.classList.remove('open'));
+  document.querySelectorAll('.snippet-panel.open').forEach(x=>x.classList.remove('open'));
+  if(!open){
+    const snippet=currentSnippets[field]||'';
+    const val=currentResult[field];
+    const dv=val!=null?(Array.isArray(val)?val.join(', '):String(val)):'';
+
+    let ctx='';
+    if(snippet) ctx=`<div class="edit-hint">📄 Contesto dal PDF — puoi selezionare testo come suggerimento:</div><div class="edit-context" onmouseup="onSnippetSelect('${field}')">${highlightValue(snippet,val)}</div>`;
+    else ctx='<div class="edit-hint">ℹ️ Nessun contesto PDF trovato per questo campo</div>';
+
+    p.innerHTML=`${ctx}
+      <div class="edit-row">
+        <input class="edit-input" id="ei-${field}" value="${escapeHtml(dv)}" placeholder="Valore corretto..."/>
+        <button class="btn-save-edit" onclick="saveEdit('${field}')">✅ Salva</button>
+        <button class="btn-cancel-edit" onclick="cancelEdit('${field}')">✖</button>
+      </div>
+      <div class="edit-hint" style="margin-top:4px">💡 Questa correzione insegna all'AI dove trovare "${FIELD_MAP[field]?.label||field}" nei PDF</div>`;
+    p.classList.add('open');
+    setTimeout(()=>document.getElementById(`ei-${field}`)?.focus(),100);
+  }
+}
+function onSnippetSelect(field){
+  const sel=window.getSelection().toString().trim();
+  if(sel&&sel.length>1){ const inp=document.getElementById(`ei-${field}`); if(inp) inp.value=sel; }
+}
+function cancelEdit(field){ document.getElementById(`edit-${field}`).classList.remove('open'); }
+
+async function saveEdit(field) {
+  const inp=document.getElementById(`ei-${field}`);
+  const corrected=inp.value.trim();
+  if(!corrected){ showToast('Inserisci un valore','error'); return; }
+  const original=currentResult[field]||'';
+  const snippet=currentSnippets[field]||'';
+  inp.disabled=true;
+  try{
+    const res=await fetch(`${API}/api/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({doc_id:currentDocId,field,original:String(original),corrected,text_snippet:snippet.slice(0,2000)})});
+    const data=await res.json();
+    currentResult[field]=corrected;
+    currentMethods[field]='corrected';
+    // Update card
+    const card=document.querySelector(`.result-card[data-field="${field}"]`);
+    if(card){
+      const cfg=FIELD_MAP[field]; const ve=card.querySelector('.result-value,.tags-wrap');
+      if(ve){ ve.textContent=corrected; ve.className=cfg?.money?'result-value money':cfg?.mono?'result-value mono':'result-value'; }
+      const ba=card.querySelector('.card-badges');
+      const ob=ba?.querySelector('.method-badge');
+      if(ob) ob.outerHTML='<span class="method-badge corrected">CORRETTO</span>';
+      else if(ba) ba.insertAdjacentHTML('afterbegin','<span class="method-badge corrected">CORRETTO</span>');
+    }
+    cancelEdit(field);
+    const msg=data.model_retrained
+      ?`🧠 Modello "${FIELD_MAP[field]?.label||field}" riaddestrato! (${data.sample_count} campioni)`
+      :`✅ Correzione salvata (${data.sample_count}/5 per training)`;
+    showToast(msg,'ok');
+    loadStats(); loadLearningProgress();
+  }catch(e){ showToast('Errore: '+e.message,'error'); }
+  finally{ inp.disabled=false; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LEARNING PROGRESS
+// ═══════════════════════════════════════════════════════════════
+async function loadLearningProgress() {
+  try{
+    const res=await fetch(`${API}/api/stats`);
+    const stats=await res.json();
+    const samples=stats.training_samples||{};
+    const el=document.getElementById('learn-progress');
+    const tracked=[...new Set([...ALL_FIELDS,...Object.keys(samples)])];
+    const maxS=Math.max(10,...Object.values(samples));
+    el.innerHTML=tracked.filter(f=>(samples[f]||0)>0||currentMethods[f])
+      .sort((a,b)=>(samples[b]||0)-(samples[a]||0)).slice(0,15)
+      .map(f=>{
+        const c=samples[f]||0; const pct=Math.min(100,(c/maxS)*100); const ready=c>=5;
+        return `<div class="learn-field-row"><div class="learn-field-name">${FIELD_MAP[f]?.label||f}</div>
+          <div class="learn-bar-wrap"><div class="learn-bar-fill ${ready?'ready':''}" style="width:${pct}%"></div></div>
+          <div class="learn-count">${c} ${ready?'✅ ML ON':''}</div></div>`;
+      }).join('')||'<div style="font-size:0.78rem;color:#888">Correggi i campi per iniziare il learning</div>';
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════════════════════════
+function exportJSON(){
+  if(!currentResult) return;
+  const c={...currentResult}; Object.keys(c).filter(k=>k.startsWith('_')).forEach(k=>delete c[k]);
+  const b=new Blob([JSON.stringify(c,null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`gara_${currentDocId||'export'}.json`; a.click();
+  showToast('JSON esportato','ok');
+}
+function exportCSV(){
+  if(!currentResult) return;
+  const rows=[['Campo','Valore']];
+  SECTIONS.forEach(s=>s.fields.forEach(f=>{const v=currentResult[f.key]; if(v!=null&&v!=='') rows.push([f.label,Array.isArray(v)?v.join('; '):String(v)]); }));
+  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const b=new Blob(['\ufeff'+csv],{type:'text/csv'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download=`gara_${currentDocId||'export'}.csv`; a.click();
+  showToast('CSV esportato','ok');
+}
+function copyResults(){
+  if(!currentResult) return;
+  let t='DATI GARA D\'APPALTO\n'+'═'.repeat(40)+'\n\n';
+  SECTIONS.forEach(s=>{let st=''; s.fields.forEach(f=>{const v=currentResult[f.key]; if(v) st+=`  ${f.label}: ${Array.isArray(v)?v.join(', '):v}\n`;}); if(st) t+=`${s.icon} ${s.title}\n${st}\n`;});
+  navigator.clipboard.writeText(t).then(()=>showToast('Copiato','ok'));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STORICO
+// ═══════════════════════════════════════════════════════════════
+async function loadHistory(){
+  try{
+    const res=await fetch(`${API}/api/history`);
+    const docs=await res.json();
+    const el=document.getElementById('history-list');
+    if(!docs.length){ el.innerHTML='<div style="color:var(--ink-soft)">Nessun documento.</div>'; return; }
+    el.innerHTML=docs.map(d=>`
+      <div style="background:white;border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.2rem;display:flex;align-items:center;gap:1rem;justify-content:space-between;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.filename}</div>
+          <div style="font-size:0.82rem;color:var(--ink-soft);margin-top:2px">${d.oggetto!=='N/D'?(d.oggetto||'').slice(0,120):'—'}</div>
+          <div style="font-size:0.72rem;color:#aaa;margin-top:4px;font-family:var(--font-m)">${new Date(d.date).toLocaleString('it-IT')} · ${d.procedura||''}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          ${d.importo&&d.importo!=='N/D'?`<div style="font-family:var(--font-m);color:var(--ok);font-weight:600">${d.importo}</div>`:''}
+          <div style="font-size:0.72rem;color:${d.confidence>=65?'var(--ok)':d.confidence>=35?'var(--gold)':'var(--accent)'};font-family:var(--font-m)">${d.confidence}%</div>
+        </div>
+      </div>`).join('');
+    document.getElementById('sidebar-history').innerHTML=docs.slice(0,5).map(d=>`<div class="history-item"><div class="history-item-name">${d.filename}</div><div class="history-item-meta">${d.confidence}% · ${new Date(d.date).toLocaleDateString('it-IT')}</div></div>`).join('');
+  }catch(e){ document.getElementById('history-list').innerHTML='<div style="color:var(--accent)">Server non raggiungibile</div>'; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TRAINING PAGE
+// ═══════════════════════════════════════════════════════════════
+async function addTrainingSample(){
+  const field=document.getElementById('train-field').value;
+  const value=document.getElementById('train-value').value.trim();
+  const snippet=document.getElementById('train-snippet').value.trim();
+  if(!value||!snippet){ showToast('Compila tutti i campi','error'); return; }
+  try{
+    await fetch(`${API}/api/feedback`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_id:'manual_'+Date.now(),field,original:'',corrected:value,text_snippet:snippet})});
+    showToast(`✅ Campione aggiunto per "${FIELD_MAP[field]?.label||field}"`,'ok');
+    document.getElementById('train-value').value='';
+    document.getElementById('train-snippet').value='';
+    loadTrainingStats();
+  }catch(e){ showToast('Server non raggiungibile','error'); }
+}
+async function retrainModel(){
+  const field=document.getElementById('retrain-field').value;
+  document.getElementById('train-result').textContent='⏳ Training...';
+  try{
+    const res=await fetch(`${API}/api/train/${field}`,{method:'POST'});
+    const data=await res.json();
+    document.getElementById('train-result').innerHTML=`<span style="color:${data.status==='ok'?'var(--ok)':'var(--accent)'}">${data.message}</span>`;
+    showToast(data.status==='ok'?`🧠 Modello aggiornato!`:data.message,data.status==='ok'?'ok':'error');
+    loadTrainingStats(); loadStats();
+  }catch(e){ document.getElementById('train-result').textContent='Errore'; }
+}
+async function loadTrainingStats(){
+  try{
+    const res=await fetch(`${API}/api/stats`);
+    const stats=await res.json();
+    const samples=stats.training_samples||{};
+    const models=stats.trained_models||[];
+    const el=document.getElementById('models-status');
+    if(!models.length) el.innerHTML='<div style="color:var(--ink-soft)">Nessun modello. Correggi almeno 5 campi per attivare ML.</div>';
+    else el.innerHTML=models.map(m=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div><div style="font-weight:500">${FIELD_MAP[m.field]?.icon||'🤖'} ${FIELD_MAP[m.field]?.label||m.field}</div><div style="font-size:0.72rem;color:var(--ink-soft)">${new Date(m.trained_at).toLocaleString('it-IT')}</div></div><div style="font-family:var(--font-m);font-size:0.8rem;color:var(--ok)">${m.samples} campioni</div></div>`).join('');
+    // Samples per campo
+    const flds=[...new Set([...ALL_FIELDS,...Object.keys(samples)])].filter(f=>(samples[f]||0)>0).sort((a,b)=>(samples[b]||0)-(samples[a]||0));
+    if(flds.length){
+      let h='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px"><div style="font-family:var(--font-m);font-size:0.65rem;color:var(--ink-soft);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Campioni per campo</div>';
+      flds.forEach(f=>{const c=samples[f]||0;const r=c>=5;h+=`<div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;padding:3px 0"><span style="width:180px;color:var(--ink-soft);font-size:0.78rem">${FIELD_MAP[f]?.label||f}</span><div style="flex:1;background:var(--paper2);height:5px;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,c*10)}%;background:${r?'var(--ok)':'var(--accent2)'};border-radius:3px"></div></div><span style="font-family:var(--font-m);font-size:0.72rem;color:${r?'var(--ok)':'#aaa'};width:60px;text-align:right">${c} ${r?'✅':''}</span></div>`;});
+      h+='</div>';
+      el.innerHTML+=h;
+    }
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// STATS SIDEBAR
+// ═══════════════════════════════════════════════════════════════
+async function loadStats(){
+  try{
+    const res=await fetch(`${API}/api/stats`);
+    const stats=await res.json();
+    document.getElementById('stat-docs').textContent=stats.total_documents||0;
+    document.getElementById('stat-corrections').textContent=stats.total_corrections||0;
+    const models=stats.trained_models||[];
+    const el=document.getElementById('models-list');
+    if(!models.length) el.innerHTML='<div class="model-badge"><div class="model-dot"></div>Nessun modello ML</div>';
+    else el.innerHTML=models.map(m=>`<div class="model-badge"><div class="model-dot active"></div><span>${FIELD_MAP[m.field]?.label||m.field} <span style="color:#666">(${m.samples})</span></span></div>`).join('');
+  }catch(e){}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════
+function showToast(msg,type='info'){
+  const t=document.createElement('div'); t.className='toast'+(type==='ok'?' ok':'');
+  t.textContent=msg; document.getElementById('toast-container').appendChild(t);
+  setTimeout(()=>t.remove(),5000);
+}
+
+// INIT
+populateFieldSelects(); loadStats(); loadHistory();
+</script>
+</body>
+</html>
