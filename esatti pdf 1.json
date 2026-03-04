@@ -1,0 +1,280 @@
+{
+  "cig": "B98EF73DEB",
+  "cup": "E44H20000720008",
+  "oggetto_appalto": "Servizi di ingegneria: Direzione Lavori e Coordinamento in fase di esecuzione per i lavori di risanamento idrogeologico del Torrente Savana, nel Comune di Serino (AV)",
+  "descrizione_lavori_con_importo_totale": {
+    "tipologia": "Servizi di ingegneria - Direzione lavori e Coordinamento sicurezza in fase di esecuzione",
+    "lotti": [
+      {
+        "lotto": 1,
+        "ubicazione": "Torrente Savana, Comune di Serino (AV)",
+        "importo_euro": 190239.79,
+        "quota_fissa_65_percento_euro": 123655.86,
+        "quota_ribassabile_35_percento_euro": 66583.93
+      }
+    ],
+    "importo_totale_procedura_euro": 190239.79,
+    "note": "Importo a base di gara al netto di IVA, oneri assistenziali e previdenziali. Il 35% (€66.583,93) è soggetto a ribasso, il 65% è prezzo fisso. Non ricorrono rischi di interferenze (art. 26, comma 3-bis, D.Lgs. 81/2008), quindi non è previsto il DUVRI. Costi manodopera pari a €0,00."
+  },
+  "stazione_appaltante": {
+    "ente": "Centrale Unica di Committenza 'Valle del Sabato'",
+    "rup": {
+      "nome": "Ing. Vincenza Amoroso"
+    },
+    "sede": "Via Mancini 30 – 83020 Aiello del Sabato (AV)"
+  },
+  "amministrazione_delegante": {
+    "ente": "Comune di Serino (AV)",
+    "sede": "Piazza Cicarelli 1, 83028 Serino (AV)"
+  },
+  "responsabile_procedimento": {
+    "nome": "Arch. Giuseppe Cocchi"
+  },
+  "tipologia_appalto": "Procedura aperta ai sensi dell'articolo 71 del D.Lgs. 36/2023 da aggiudicarsi con il criterio dell'offerta economicamente più vantaggiosa sulla base del miglior rapporto qualità/prezzo ai sensi dell'articolo 108 comma 2",
+  "requisiti_idoneita_professionale": {
+    "profili_richiesti": [
+      {
+        "numero": 1,
+        "ruolo": "Direttore dei Lavori",
+        "requisiti": "Ingegnere o Architetto iscritto all'albo professionale (può coincidere con il Coordinatore Progettazione ed Esecuzione se in possesso dei necessari requisiti)"
+      },
+      {
+        "numero": 1,
+        "ruolo": "Coordinatore Progettazione ed Esecuzione della Sicurezza nei cantieri",
+        "requisiti": "Tecnico abilitato quale Coordinatore della Sicurezza ai sensi del Titolo IV del Decreto Legislativo n°81/2008 (può coincidere con il Direttore dei Lavori se in possesso dei necessari requisiti)"
+      }
+    ],
+    "note": "Gruppo di lavoro minimo composto da 2 professionisti. Per i raggruppamenti temporanei è richiesta la presenza di almeno un giovane professionista (iscritto all'albo da meno di 5 anni). Il rapporto professionale deve essere instaurato prima della presentazione dell'offerta."
+  },
+  "requisiti_capacita_tecnica_professionale": {
+    "servizi_di_punta": {
+      "numero": 2,
+      "periodo": "Ultimi 10 anni",
+      "tipologia": "Servizi di ingegneria e architettura espletati, relativi alle categorie e ID indicate",
+      "categorie": [
+        {
+          "codice": "D.02",
+          "descrizione": "Idraulica - Opere di bonifica e derivazione, bonifiche ed irrigazioni a deflusso naturale, sistemazione dei corsi d'acqua e dei bacini montani (VII/a)",
+          "importo_complessivo_lavori_progettati_euro": 2537901.19,
+          "importo_minimo_servizi_punta_euro": 1522740.71
+        },
+        {
+          "codice": "S.03",
+          "descrizione": "Strutture - Opere infrastrutturali puntuali (IX/b)",
+          "importo_complessivo_lavori_progettati_euro": 1759052.11,
+          "importo_minimo_servizi_punta_euro": 1055431.27
+        }
+      ],
+      "note": "È possibile dimostrare il requisito con un unico servizio purché di importo almeno pari al minimo richiesto. Per le categorie D.02 e S.03, le attività svolte per opere analoghe con grado di complessità almeno pari a quello dei servizi da affidare sono idonee."
+    },
+    "elenco_servizi": {
+      "periodo": "Ultimi 10 anni",
+      "categorie": [
+        {
+          "codice": "D.02",
+          "descrizione": "Idraulica - Opere di bonifica e derivazione",
+          "importo_minimo_euro": 3806851.78
+        },
+        {
+          "codice": "S.03",
+          "descrizione": "Strutture - Opere infrastrutturali puntuali",
+          "importo_minimo_euro": 2638578.17
+        }
+      ],
+      "note": "Importo complessivo per ogni categoria e ID almeno pari a 1,5 volte il valore delle opere."
+    }
+  },
+  "requisiti_capacita_economica_finanziaria": {
+    "descrizione": "Fatturato globale maturato nei migliori tre esercizi degli ultimi cinque anni antecedenti la pubblicazione del bando",
+    "importo_minimo_euro": 285359.68,
+    "note": "Parità a 1,5 volte il valore stimato dell'appalto, IVA e oneri previdenziali esclusi. Per le imprese con attività da meno di 3 anni, il requisito è rapportato al periodo effettivo. In alternativa: copertura assicurativa contro rischi professionali per massimale non inferiore a €429.695,33 (pari al 10% dell'importo delle opere)."
+  },
+  "sopralluogo": {
+    "obbligatorio": true,
+    "note": "Il sopralluogo delle aree oggetto di intervento è obbligatorio. Il concorrente deve eseguire il sopralluogo in proprio e rilasciare apposita dichiarazione sostitutiva di presa visione dello stato dei luoghi. Non sono previsti sopralluoghi congiunti né rilascio di attestazione da parte della Stazione Appaltante."
+  },
+  "scadenza": "19/01/2026 ore 12:00 (FASE 1 - creazione archivi); 19/01/2026 ore 16:00 (prima sessione pubblica)",
+  "termine_chiarimenti": "12/01/2026 ore 12:00",
+  "regole_presentazione_offerte": {
+    "piattaforma": "https://cucvalledelsabato.traspare.com/",
+    "modalita": "Esclusivamente telematica tramite PAD (Piattaforma di Approvvigionamento Digitale) con firma digitale",
+    "gestore": {
+      "telefono_assistenza": "Non specificato nel disciplinare",
+      "email_assistenza": "ufficiogare@gmail.com - centralecommittenza.aiello@asmepec.it"
+    }
+  },
+  "documentazione_amministrativa_richiesta": [
+    "Domanda di partecipazione (Allegato A)",
+    "DGUE compilato online e firmato digitalmente",
+    "Eventuale procura",
+    "Garanzia provvisoria (€3.804,80)",
+    "Documentazione in caso di avvalimento",
+    "Documentazione soggetti associati",
+    "Pagamento contributo ANAC (€18,00)",
+    "Documentazione pagamento imposta di bollo (€16,00)"
+  ],
+  "offerta_tecnica": {
+    "punteggio_massimo": 95,
+    "formato_relazione": "Max 20 facciate A4 (intestazioni e sommari esclusi dal computo)",
+    "criteri": [
+      {
+        "codice": "A",
+        "nome": "Professionalità ed adeguatezza dell'offerta",
+        "punteggio": 30,
+        "tipo": "discrezionale",
+        "sub_criteri": [
+          {
+            "codice": "A.1",
+            "punteggio": 15,
+            "descrizione": "Caratteristiche di un servizio affine svolto per la realizzazione di un intervento simile a quello indicato nei requisiti di partecipazione"
+          },
+          {
+            "codice": "A.2",
+            "punteggio": 15,
+            "descrizione": "Caratteristiche di un servizio affine svolto con riferimento alla capacità gestionale ed amministrativa della commessa"
+          }
+        ]
+      },
+      {
+        "codice": "B",
+        "nome": "Caratteristiche metodologiche dell'offerta",
+        "punteggio": 65,
+        "tipo": "discrezionale",
+        "sub_criteri": [
+          {
+            "codice": "B.1",
+            "punteggio": 20,
+            "descrizione": "Caratteristiche qualitative, metodologiche e tecniche delle attività di Direzione dei Lavori e del C.S.E."
+          },
+          {
+            "codice": "B.2",
+            "punteggio": 20,
+            "descrizione": "Dettaglio delle risorse umane e strumentali destinate alle attività oggetto dell'incarico"
+          },
+          {
+            "codice": "B.3",
+            "punteggio": 25,
+            "descrizione": "Attività di supporto al R.U.P. nella gestione del contratto di appalto e degli altri servizi a carico dell'Ente"
+          }
+        ]
+      }
+    ]
+  },
+  "offerta_economica": {
+    "punteggio_massimo": 5,
+    "modalita": "Ribasso percentuale offerto da applicare al canone posto a base di gara, espresso in cifre e lettere (max 3 cifre decimali). In caso di discordanza, prevale il ribasso più conveniente per l'amministrazione.",
+    "note": "Il ribasso si applica esclusivamente sulla quota disponibile del 35% del corrispettivo (€66.583,93). Sono inammissibili le offerte economiche che superano l'importo a base d'asta."
+  },
+  "criteri_valutazione_offerta_tecnica": {
+    "punteggio_totale": 100,
+    "ripartizione": {
+      "offerta_tecnica": 95,
+      "offerta_economica": 5
+    },
+    "metodo_valutazione": {
+      "tecnica": "Metodo aggregativo compensatore con coefficienti variabili tra 0 e 1 attribuiti discrezionalmente dai singoli commissari (0,00=nessuna proposta migliorativa; 0,01-0,20=scarso; 0,21-0,35=insufficiente; 0,36-0,50=mediocre; 0,51-0,65=sufficiente; 0,66-0,75=discreto; 0,76-0,90=buono; 0,91-1,00=eccellente)",
+      "economica": "Formula con interpolazione lineare: Ci = Ai/Amax (dove Ci=coefficiente, Ai=ribasso concorrente, Amax=ribasso più conveniente)"
+    }
+  },
+  "vincoli_partecipazione": {
+    "vincolo_partecipazione_entrambi_lotti": false,
+    "offerta_identica_per_entrambi_lotti": false,
+    "medesima_forma_giuridica": false,
+    "vincolo_aggiudicazione": "Lotto unico - aggiudicazione al miglior offerente",
+    "nota_difformita": "Non applicabile - lotto unico"
+  },
+  "tempistiche_esecuzione": {
+    "durata_complessiva_giorni": 540,
+    "note": "Giorni decorrenti dalla data del verbale di consegna dei lavori. Tutte le prestazioni che precedono la data di consegna devono essere avviate nei tempi richiesti dalla Stazione Appaltante secondo le indicazioni del Responsabile Unico del Progetto."
+  },
+  "garanzia_provvisoria": {
+    "richiesta": true,
+    "importo_euro": 3804.80,
+    "modalita": "Cauzione mediante accredito/bonifico presso conto C/C IBAN IT41D0843175910000000102945 del Comune di Serino, oppure fideiussione bancaria/assicurativa o da intermediario finanziario",
+    "validita_giorni": 180,
+    "note": "Costituita in data certa anteriore al termine di presentazione delle offerte. Si applicano le riduzioni di cui all'articolo 106, comma 8 del Codice."
+  },
+  "garanzia_definitiva": {
+    "percentuale": 10,
+    "note": "Da presentare all'atto della stipula del contratto, calcolata sull'importo contrattuale."
+  },
+  "revisione_prezzi": {
+    "ammessa": true,
+    "soglia_percentuale": 5,
+    "percentuale_applicabile": 80,
+    "note": "Qualora si determini una variazione del costo del servizio superiore al 5% dell'importo complessivo, i prezzi sono aggiornati nella misura dell'80% della variazione del valore eccedente la variazione del 5% (parere MIT n. 1455/2022)."
+  },
+  "contributo_anac": {
+    "importo_euro": 18.00,
+    "note": "Condizione di ammissibilità dell'offerta. Pagamento verificato prima della valutazione dell'offerta."
+  },
+  "imposta_bollo": {
+    "importo_euro": 16.00,
+    "modalita": "F24, bollo virtuale @e.bollo Agenzia Entrate, o bonifico IBAN IT07Y0100003245348008120501"
+  },
+  "subappalto": {
+    "ammesso": true,
+    "quota_minima_pmi": 20,
+    "note": "Non può essere affidata in subappalto l'integrale esecuzione delle prestazioni. Il concorrente si impegna a subappaltare alle PMI una quota non inferiore al 20% delle prestazioni che intende subappaltare."
+  },
+  "avvalimento": {
+    "ammesso": true,
+    "note": "Possibile per requisiti tecnico-professionali (esclusi progettazione, direzione lavori, collaudi e verifiche che devono essere eseguiti direttamente dall'impresa ausiliaria) e per migliorare l'offerta. Non consentito per requisiti di ordine generale e iscrizione Camera di Commercio."
+  },
+  "soggetti_ammessi": [
+    "Liberi professionisti singoli od associati",
+    "Società tra professionisti",
+    "Società di ingegneria",
+    "Prestatori di servizi di ingegneria e architettura identificati con codici CPV 74200000-1 a 74276400-8 e 74310000-5 a 74323100-0 e 74874000-6",
+    "Altri soggetti abilitati in forza del diritto nazionale",
+    "Raggruppamenti temporanei o consorzi ordinari",
+    "Consorzi stabili di società di professionisti e di società di ingegneria",
+    "Consorzi stabili professionali (art. 12 L. 81/2017)",
+    "Aggregazioni tra operatori economici aderenti al contratto di rete",
+    "GEIE"
+  ],
+  "note_particolari": [
+    "Procedura aperta con criterio offerta economicamente più vantaggiosa (art. 108 comma 2 D.Lgs. 36/2023)",
+    "Lotto unico - non ulteriormente scomponibile (art. 58 comma 2 Codice)",
+    "Durata servizio: 540 giorni dalla consegna dei lavori",
+    "Non previsti costi manodopera e DUVRI (natura intellettuale del servizio)",
+    "Prestazione principale: D.02 (VII/a) e S.03 (IX/b)",
+    "Conformità ai CAM D.M. n. 256 del 23 giugno 2022",
+    "Possibile inversione procedimentale ex art. 107 comma 3",
+    "Codice NUTS: ITE43 (Roma) - specificato in info.json, nel disciplinare: codice NUTS ITF34 (Campania)",
+    "Finanziamento: decreto Dirigenziale 545/2025 Regione Campania, PR Campania FESR 2021-2027",
+    "Progetto esecutivo approvato con Delibera G.C. 44 del 14.03.2023",
+    "Self-cleaning ammesso per circostanze ex art. 94 e 95 Codice (eccetto irregolarità contributive/fiscali definitivamente accertate)"
+  ],
+  "codici_cpv": [
+    "71240000"
+  ],
+  "categorie_opere": {
+    "idraulica": {
+      "codice": "D.02",
+      "grado_complessita": "0,45",
+      "importo_opere": 2537901.19
+    },
+    "strutture": {
+      "codice": "S.03",
+      "grado_complessita": "0,95",
+      "importo_opere": 1759052.11
+    }
+  },
+  "commissione_giudicatrice": {
+    "numero_membri": 3,
+    "requisiti": "Esperti nel settore specifico, numero dispari",
+    "note": "Nominata dopo la scadenza del termine per la presentazione delle offerte. I commissari non devono sussistere cause ostative ex art. 93 comma 5."
+  },
+  "verifica_anomalia_offerte": {
+    "criterio": "Offerte con punti prezzo e somma punti tecnico/qualitativi entrambi pari o superiori ai 4/5 dei corrispondenti punti massimi",
+    "note": "La Stazione Appaltante si riserva la facoltà di sottoporre a verifica offerte anormalmente basse anche in base ad altri elementi (costi manodopera)."
+  },
+  "accesso_atti": {
+    "modalita": "Digitale tramite PAD",
+    "note": "Disponibilità documentazione ai primi cinque classificati secondo specifiche modalità. Comunicazione tramite PEC."
+  },
+  "controversie": {
+    "giurisdizione": "Tribunale Amministrativo di Salerno"
+  }
+}

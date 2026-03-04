@@ -1,0 +1,721 @@
+{
+  "bando_info": {
+    "numero_bando": "SI049/2025",
+    "titolo": "Procedura telematica aperta suddivisa in tre Lotti, per l'affidamento, mediante accordi quadro a unico operatore, dei servizi di ingegneria e architettura",
+    "stazione_appaltante": {
+      "ente": "Città Metropolitana di Napoli",
+      "area": "Area Stazione Appaltante e Patrimonio",
+      "direzione": "DIREZIONE SERVIZI TECNICI PATRIMONIO",
+      "rup": "Arch. Giuseppe Napolitano",
+      "sede": "Napoli"
+    },
+    "importo_totale": 1554800.00,
+    "valuta": "EUR",
+    "iva": "esclusa",
+    "location": {
+      "nuts_code": "ITF33",
+      "provincia": "Napoli"
+    }
+  },
+  "lotti": [
+    {
+      "numero": 1,
+      "descrizione": "SIA relativi ad interventi su edifici di pregio storico-architettonico di importo lavori fino ad € 1.500.000,00 e attività complementari",
+      "importo_base_gara": 550000.00,
+      "importo_totale_con_oneri": 572000.00,
+      "quota_fissa_percentuale": 65,
+      "quota_fissa_euro": 357500.00,
+      "quota_ribassabile_percentuale": 35,
+      "quota_ribassabile_euro": 192500.00,
+      "oneri_previdenziali": 22000.00,
+      "cig": "indicato in piattaforma",
+      "cup": [
+        "H62H22000700003",
+        "H42F25000140003",
+        "H62H25000240003"
+      ],
+      "prestazioni": [
+        {
+          "id": 1,
+          "descrizione": "Servizi di progettazione di edifici",
+          "cpv": "71221000-3",
+          "importo": 290000.00,
+          "tipo": "principale"
+        },
+        {
+          "id": 2,
+          "descrizione": "Direzione lavori",
+          "cpv": "71247000-1",
+          "importo": 74000.00,
+          "tipo": "secondaria"
+        },
+        {
+          "id": 3,
+          "descrizione": "Coordinamento della sicurezza in fase di esecuzione",
+          "cpv": "79417000-0",
+          "importo": 34000.00,
+          "tipo": "secondaria"
+        },
+        {
+          "id": 4,
+          "descrizione": "Servizi di collaudo e verifica di edifici",
+          "cpv": "71315400-3",
+          "importo": 40000.00,
+          "tipo": "secondaria"
+        },
+        {
+          "id": 5,
+          "descrizione": "Servizi tecnici",
+          "cpv": "71356000-8",
+          "importo": 112000.00,
+          "tipo": "secondaria"
+        }
+      ],
+      "categorie_opere": [
+        {
+          "categoria": "Edilizia",
+          "id_codice": "E21",
+          "descrizione": "Interventi di manutenzione straordinaria, restauro, ristrutturazione, riqualificazione, su edifici e manufatti di interesse storico artistico non soggetti a tutela ai sensi del decreto legislativo n. 42/2004",
+          "grado_complessita": 1.20,
+          "importo_opere": 200000.00
+        },
+        {
+          "categoria": "Edilizia",
+          "id_codice": "E22",
+          "descrizione": "Interventi di manutenzione, restauro, risanamento conservativo, riqualificazione, su edifici e manufatti di interesse storico artistico soggetti a tutela ai sensi del decreto legislativo n. 42/2004, oppure di particolare importanza",
+          "grado_complessita": 1.55,
+          "importo_opere": 580000.00
+        },
+        {
+          "categoria": "Strutture",
+          "id_codice": "S04",
+          "descrizione": "Strutture o parti di strutture in muratura, legno, metallo - Verifiche strutturali relative - Consolidamento delle opere di fondazione di manufatti dissestati - Ponti, Paratie e tiranti, Consolidamento di pendii e di fronti rocciosi ed opere connesse, di tipo corrente",
+          "grado_complessita": 0.90,
+          "importo_opere": 2457750.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA01",
+          "descrizione": "Impianti per l'approvvigionamento, la preparazione e la distribuzione di acqua nell'interno di edifici o per scopi industriali – Impianti sanitari - Impianti di fognatura domestica od industriale ed opere relative al trattamento delle acque di rifiuto - Reti di distribuzione di combustibili liquidi o gassosi - Impianti per la distribuzione dell'aria compressa del vuoto e di gas medicali - Impianti e reti antincendio",
+          "grado_complessita": 0.75,
+          "importo_opere": 48250.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA02",
+          "descrizione": "Impianti di riscaldamento - Impianto di raffrescamento, climatizzazione, trattamento dell'aria - Impianti meccanici di distribuzione fluidi - Impianto solare termico",
+          "grado_complessita": 0.85,
+          "importo_opere": 148000.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA03",
+          "descrizione": "Impianti elettrici in genere, impianti di illuminazione, telefonici, di rivelazione incendi, fotovoltaici, a corredo di edifici e costruzioni di importanza corrente - singole apparecchiature per laboratori e impianti pilota di tipo semplice",
+          "grado_complessita": 1.15,
+          "importo_opere": 153000.00
+        }
+      ],
+      "requisiti_capacita_tecnica": {
+        "servizi_analoghi_numero": 1,
+        "periodo_anni": 10,
+        "importo_minimo_per_categoria": {
+          "E21": 200000.00,
+          "E22": 580000.00,
+          "S04": 2457750.00,
+          "IA01": 48250.00,
+          "IA02": 148000.00,
+          "IA03": 153000.00
+        }
+      }
+    },
+    {
+      "numero": 2,
+      "descrizione": "SIA relativi ad interventi su edifici di pregio storico-architettonico di importo lavori superiore ad € 1.500.000,00 e fino ad € 4.500.000,00",
+      "importo_base_gara": 790000.00,
+      "importo_totale_con_oneri": 821600.00,
+      "quota_fissa_percentuale": 65,
+      "quota_fissa_euro": 513500.00,
+      "quota_ribassabile_percentuale": 35,
+      "quota_ribassabile_euro": 276500.00,
+      "oneri_previdenziali": 31600.00,
+      "cig": "indicato in piattaforma",
+      "cup": "H62F25000270003",
+      "prestazioni": [
+        {
+          "id": 1,
+          "descrizione": "Servizi di progettazione di edifici",
+          "cpv": "71221000-3",
+          "importo": 615000.00,
+          "tipo": "principale"
+        },
+        {
+          "id": 2,
+          "descrizione": "Coordinamento della sicurezza in fase di esecuzione",
+          "cpv": "79417000-0",
+          "importo": 130000.00,
+          "tipo": "secondaria"
+        },
+        {
+          "id": 3,
+          "descrizione": "Servizi di collaudo e verifica di edifici",
+          "cpv": "71315400-3",
+          "importo": 45000.00,
+          "tipo": "secondaria"
+        }
+      ],
+      "categorie_opere": [
+        {
+          "categoria": "Edilizia",
+          "id_codice": "E19",
+          "descrizione": "Arredi, forniture, aree esterne pertinenziali allestite - Arredamenti con elementi singolari, Parchi urbani, Parchi ludici attrezzati, Giardini e piazze storiche, Opere di riqualificazione paesaggistica e ambientale di aree urbane.",
+          "grado_complessita": 1.20,
+          "importo_opere": 1370385.00
+        },
+        {
+          "categoria": "Edilizia",
+          "id_codice": "E22",
+          "descrizione": "Interventi di manutenzione, restauro, risanamento conservativo, riqualificazione, su edifici e manufatti di interesse storico artistico soggetti a tutela ai sensi del decreto legislativo n. 42/2004, oppure di particolare importanza",
+          "grado_complessita": 1.55,
+          "importo_opere": 2087500.00
+        },
+        {
+          "categoria": "Strutture",
+          "id_codice": "S04",
+          "descrizione": "Strutture o parti di strutture in muratura, legno, metallo - Verifiche strutturali relative - Consolidamento delle opere di fondazione di manufatti dissestati - Ponti, Paratie e tiranti, Consolidamento di pendii e di fronti rocciosi ed opere connesse, di tipo corrente",
+          "grado_complessita": 0.90,
+          "importo_opere": 750000.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA01",
+          "descrizione": "Impianti per l'approvvigionamento, la preparazione e la distribuzione di acqua nell'interno di edifici o per scopi industriali – Impianti sanitari - Impianti di fognatura domestica od industriale ed opere relative al trattamento delle acque di rifiuto - Reti di distribuzione di combustibili liquidi o gassosi - Impianti per la distribuzione dell'aria compressa del vuoto e di gas medicali - Impianti e reti antincendio",
+          "grado_complessita": 0.75,
+          "importo_opere": 768270.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA02",
+          "descrizione": "Impianti di riscaldamento - Impianto di raffrescamento, climatizzazione, trattamento dell'aria - Impianti meccanici di distribuzione fluidi - Impianto solare termico",
+          "grado_complessita": 0.85,
+          "importo_opere": 215000.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA03",
+          "descrizione": "Impianti elettrici in genere, impianti di illuminazione, telefonici, di rivelazione incendi, fotovoltaici, a corredo di edifici e costruzioni di importanza corrente - singole apparecchiature per laboratori e impianti pilota di tipo semplice",
+          "grado_complessita": 1.15,
+          "importo_opere": 838270.00
+        }
+      ]
+    },
+    {
+      "numero": 3,
+      "descrizione": "SIA relativi ad interventi di importo lavori fino ad € 1.000.000,00 e attività complementari",
+      "importo_base_gara": 155000.00,
+      "importo_totale_con_oneri": 161200.00,
+      "quota_fissa_percentuale": 65,
+      "quota_fissa_euro": 100750.00,
+      "quota_ribassabile_percentuale": 35,
+      "quota_ribassabile_euro": 54250.00,
+      "oneri_previdenziali": 6200.00,
+      "cig": "indicato in piattaforma",
+      "cup": [
+        "H22H22000850003",
+        "H22F23000280003"
+      ],
+      "prestazioni": [
+        {
+          "id": 1,
+          "descrizione": "Servizi di progettazione di edifici",
+          "cpv": "71221000-3",
+          "importo": 30000.00,
+          "tipo": "secondaria"
+        },
+        {
+          "id": 2,
+          "descrizione": "Servizi di collaudo e verifica di edifici",
+          "cpv": "71315400-3",
+          "importo": 13000.00,
+          "tipo": "secondaria"
+        },
+        {
+          "id": 3,
+          "descrizione": "Servizi tecnici",
+          "cpv": "71356000-8",
+          "importo": 112000.00,
+          "tipo": "principale"
+        }
+      ],
+      "categorie_opere": [
+        {
+          "categoria": "Strutture",
+          "id_codice": "S04",
+          "descrizione": "Strutture o parti di strutture in muratura, legno, metallo - Verifiche strutturali relative - Consolidamento delle opere di fondazione di manufatti dissestati - Ponti, Paratie e tiranti, Consolidamento di pendii e di fronti rocciosi ed opere connesse, di tipo corrente",
+          "grado_complessita": 0.90,
+          "importo_opere": 264000.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA01",
+          "descrizione": "Impianti per l'approvvigionamento, la preparazione e la distribuzione di acqua nell'interno di edifici o per scopi industriali – Impianti sanitari - Impianti di fognatura domestica od industriale ed opere relative al trattamento delle acque di rifiuto - Reti di distribuzione di combustibili liquidi o gassosi - Impianti per la distribuzione dell'aria compressa del vuoto e di gas medicali - Impianti e reti antincendio",
+          "grado_complessita": 0.75,
+          "importo_opere": 24000.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA02",
+          "descrizione": "Impianti di riscaldamento - Impianto di raffrescamento, climatizzazione, trattamento dell'aria - Impianti meccanici di distribuzione fluidi - Impianto solare termico",
+          "grado_complessita": 0.85,
+          "importo_opere": 96000.00
+        },
+        {
+          "categoria": "Impianti",
+          "id_codice": "IA03",
+          "descrizione": "Impianti elettrici in genere, impianti di illuminazione, telefonici, di rivelazione incendi, fotovoltaici, a corredo di edifici e costruzioni di importanza corrente - singole apparecchiature per laboratori e impianti pilota di tipo semplice",
+          "grado_complessita": 1.15,
+          "importo_opere": 96000.00
+        }
+      ]
+    }
+  ],
+  "tipo_procedura": {
+    "tipologia": "Procedura telematica aperta",
+    "suddivisione": "3 Lotti",
+    "forma": "Accordi quadro a unico operatore",
+    "numero_aggiudicatari": 1,
+    "articolo_riferimento": "art. 71 D.Lgs. 36/2023",
+    "criterio": "offerta economicamente più vantaggiosa",
+    "articolo_criterio": "art. 108 comma 2 lett. b del Codice"
+  },
+  "piattaforma": {
+    "url": "https://pgt.cittametropolitana.na.it/portale/",
+    "tipo": "telematica",
+    "accesso": "SPID o altri mezzi eIDAS",
+    "gestione": "Telematica"
+  },
+  "timeline": {
+    "scadenza_presentazione_offerte": "02/10/2025 ore 12:00",
+    "data_pubblicazione_chiarimenti": "almeno 6 giorni prima della scadenza",
+    "termine_richieste_chiarimenti": "almeno 10 giorni prima della scadenza",
+    "data_pubblicazione_bando": "data di pubblicazione sulla PVL"
+  },
+  "requisiti_partecipazione": {
+    "idoneita_professionale": {
+      "lotto_1_2": [
+        {
+          "numero": 1,
+          "ruolo": "Coordinatore del gruppo di progettazione nonché incaricato dell'integrazione delle varie prestazioni specialistiche",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A"
+        },
+        {
+          "numero": 2,
+          "ruolo": "Professionista responsabile della Progettazione della categoria EDILIZIA",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A"
+        },
+        {
+          "numero": 3,
+          "ruolo": "Professionista responsabile della Progettazione Strutturale",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A o Professionista Ingegnere, abilitato ed iscritto al relativo Albo sez. A. settore civile ed ambientale"
+        },
+        {
+          "numero": 4,
+          "ruolo": "Professionista responsabile della Progettazione Impianti meccanici, idrici e idraulici",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A o Professionista Ingegnere, abilitato ed iscritto al relativo Albo sez. A. settore industriale o Perito industriale, abilitato ed iscritto al relativo Albo"
+        },
+        {
+          "numero": 5,
+          "ruolo": "Professionista responsabile della Progettazione Impianti elettrici e speciali",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A o Professionista Ingegnere, abilitato ed iscritto al relativo Albo sez. A. settore industriale o Perito industriale, abilitato ed iscritto al relativo Albo"
+        },
+        {
+          "numero": 6,
+          "ruolo": "Professionista con qualifica di Coordinatore della Sicurezza in fase di progettazione ai sensi del D.Lgs. 81/2008 e s.m.i",
+          "requisiti": "Diploma o Laurea ad indirizzo tecnico, abilitato ed iscritto al relativo Albo professionale, in possesso dei requisiti previsti dall'art. 98 del T.U. sulla Sicurezza"
+        },
+        {
+          "numero": 7,
+          "ruolo": "Professionista responsabile della Progettazione Antincendio",
+          "requisiti": "Professionista tecnico abilitato ai sensi del D.M 05.08.2011 n.151 ed iscritto nel relativo elenco del Ministero dell'Interno"
+        },
+        {
+          "numero": 8,
+          "ruolo": "Professionista con qualifica di Geologo",
+          "requisiti": "Professionista Geologo, abilitato ed iscritto al relativo Albo Professionale"
+        },
+        {
+          "numero": 9,
+          "ruolo": "Direttore dei Lavori",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A"
+        },
+        {
+          "numero": 10,
+          "ruolo": "Ufficio Direzione dei Lavori – Direttore Operativo o Ispettore di cantiere",
+          "requisiti": "Professionista Architetto, Ingegnere, Perito industriale o geometra, abilitati ed iscritti al relativo Albo"
+        },
+        {
+          "numero": 11,
+          "ruolo": "Professionista con qualifica di Coordinatore della Sicurezza in fase di esecuzione",
+          "requisiti": "Diploma o Laurea ad indirizzo tecnico, abilitato ed iscritto al relativo Albo professionale, in possesso dei requisiti previsti dall'art. 98 del T.U. sulla Sicurezza"
+        },
+        {
+          "numero": 12,
+          "ruolo": "Restauratore",
+          "requisiti": "Restauratore qualificato ai sensi della normativa italiana, inserito nell'elenco dei Restauratori di Beni Culturali del Ministero della Cultura"
+        }
+      ],
+      "lotto_3": [
+        {
+          "numero": 1,
+          "ruolo": "Coordinatore del gruppo di progettazione nonché incaricato dell'integrazione delle varie prestazioni specialistiche",
+          "requisiti": "Professionista Architetto o Ingegnere, abilitato ed iscritto al relativo Albo sez. A"
+        },
+        {
+          "numero": 2,
+          "ruolo": "Professionista responsabile della Progettazione Strutturale",
+          "requisiti": "Professionista Architetto, abilitato ed iscritto al relativo Albo sez. A o Professionista Ingegnere, abilitato ed iscritto al relativo Albo sez. A. settore civile ed ambientale"
+        },
+        {
+          "numero": 3,
+          "ruolo": "Professionista responsabile della Progettazione Impianti meccanici, idrici e idraulici",
+          "requisiti": "Professionista Architetto, Ingegnere o Perito industriale, abilitati ed iscritti al relativo Albo"
+        },
+        {
+          "numero": 4,
+          "ruolo": "Professionista responsabile della Progettazione Impianti elettrici e speciali",
+          "requisiti": "Professionista Architetto, Ingegnere o Perito industriale, abilitati ed iscritti al relativo Albo"
+        },
+        {
+          "numero": 5,
+          "ruolo": "Professionista con qualifica di Coordinatore della Sicurezza in fase di progettazione",
+          "requisiti": "Diploma o Laurea ad indirizzo tecnico, abilitato ed iscritto al relativo Albo professionale, in possesso dei requisiti dell'art. 98 D.Lgs. 81/2008"
+        },
+        {
+          "numero": 6,
+          "ruolo": "Professionista responsabile della Progettazione Antincendio",
+          "requisiti": "Professionista tecnico abilitato ai sensi del D.M 05.08.2011 n.151 ed iscritto nel relativo elenco del Ministero dell'Interno"
+        },
+        {
+          "numero": 7,
+          "ruolo": "Professionista con qualifica di Geologo",
+          "requisiti": "Professionista Geologo, abilitato ed iscritto al relativo Albo Professionale"
+        },
+        {
+          "numero": 8,
+          "ruolo": "Direttore dei Lavori",
+          "requisiti": "Professionista Architetto o Ingegnere, abilitato ed iscritto al relativo Albo sez. A"
+        },
+        {
+          "numero": 9,
+          "ruolo": "Ufficio Direzione dei Lavori – Direttore Operativo o Ispettore di cantiere",
+          "requisiti": "Professionista Architetto, Ingegnere, Perito industriale o geometra, abilitati ed iscritti al relativo Albo"
+        },
+        {
+          "numero": 10,
+          "ruolo": "Professionista con qualifica di Coordinatore della Sicurezza in fase di esecuzione",
+          "requisiti": "Diploma o Laurea ad indirizzo tecnico, abilitato ed iscritto al relativo Albo professionale, in possesso dei requisiti dell'art. 98 D.Lgs. 81/2008"
+        }
+      ]
+    },
+    "capacita_economica_finanziaria": "Non sono previsti requisiti di capacità economica e finanziaria",
+    "capacita_tecnica_professionale": {
+      "lotto_1_2": {
+        "servizi_analoghi": 1,
+        "periodo_anni": 10,
+        "descrizione": "Elenco di servizi di ingegneria e di architettura espletati negli ultimi dieci anni"
+      },
+      "lotto_3": "Non sono previsti requisiti di capacità tecnico-professionale"
+    }
+  },
+  "criteri_valutazione": {
+    "offerta_tecnica_punti": 85,
+    "offerta_economica_punti": 15,
+    "punteggio_totale": 100,
+    "soglia_minima_sbarramento": 45,
+    "metodo_tecnica": "Metodo aggregativo compensatore con doppia riparametrazione",
+    "metodo_economica": "Formula non lineare con coefficiente α=0,3",
+    "criteri_tecnici": [
+      {
+        "codice": "A",
+        "nome": "Professionalità e adeguatezza dell'offerta desunta da tre servizi SIMILARI o ANALOGHI",
+        "punti_max": 30,
+        "punti_discrezionali": 30,
+        "punti_tabellari": 0,
+        "sub_criteri": [
+          {
+            "codice": "A.1",
+            "nome": "Esempio di Progettazione PFTE, definitiva e/o esecutiva relativa ad interventi di manutenzione straordinaria",
+            "punti": 10,
+            "tipo": "discrezionale"
+          },
+          {
+            "codice": "A.2",
+            "nome": "Esempio di PFTE, definitiva e/o esecutiva relativa ad interventi di adeguamento/miglioramento sismico",
+            "punti": 10,
+            "tipo": "discrezionale"
+          },
+          {
+            "codice": "A.3",
+            "nome": "Esempio di PFTE, definitiva e/o esecutiva relativa ad interventi con soluzioni tecnologiche orientate alla sostenibilità ambientale e all'efficientamento energetico",
+            "punti": 10,
+            "tipo": "discrezionale"
+          }
+        ]
+      },
+      {
+        "codice": "B",
+        "nome": "Caratteristiche metodologiche dell'offerta",
+        "punti_max": 45,
+        "punti_discrezionali": 45,
+        "punti_tabellari": 0,
+        "sub_criteri": [
+          {
+            "codice": "B.1",
+            "nome": "Strategie progettuali su immobili esistenti",
+            "punti": 10,
+            "tipo": "discrezionale"
+          },
+          {
+            "codice": "B.2",
+            "nome": "Progettazione strutturale – Approccio all'interpretazione dello stato di fatto e alla risoluzione delle criticità",
+            "punti": 5,
+            "tipo": "discrezionale"
+          },
+          {
+            "codice": "B.3",
+            "nome": "Metodologia e strategia per il conseguimento degli obiettivi energetico-ambientali",
+            "punti": 10,
+            "tipo": "discrezionale"
+          },
+          {
+            "codice": "B.4",
+            "nome": "Multidisciplinarietà organizzazione e coordinamento del gruppo di lavoro",
+            "punti": 15,
+            "tipo": "discrezionale"
+          },
+          {
+            "codice": "B.5",
+            "nome": "Organizzazione e comunicazione anche digitale della commessa",
+            "punti": 5,
+            "tipo": "discrezionale"
+          }
+        ]
+      },
+      {
+        "codice": "C",
+        "nome": "CAM - proposte che superano i requisiti minimi dettati decreto n. 256 del 23 giugno 2022",
+        "punti_max": 5,
+        "punti_discrezionali": 0,
+        "punti_tabellari": 5,
+        "sub_criteri": [
+          {
+            "codice": "C.1",
+            "nome": "Percentuali maggiori rispetto a quelle previste dai CAM, di materiali riciclati o recuperati",
+            "punti": 5,
+            "tipo": "tabellare"
+          }
+        ]
+      },
+      {
+        "codice": "D",
+        "nome": "Proposte migliorative relative alla parità di genere e partecipazione dei giovani ai gruppi di lavoro",
+        "punti_max": 5,
+        "punti_discrezionali": 0,
+        "punti_tabellari": 5,
+        "sub_criteri": [
+          {
+            "codice": "D.1",
+            "nome": "Possesso della certificazione UNI / PdR 125-2022",
+            "punti": 2,
+            "tipo": "tabellare"
+          },
+          {
+            "codice": "D.2",
+            "nome": "Partecipazione nel Gruppo di Lavoro di giovani professionisti",
+            "punti": 3,
+            "tipo": "tabellare"
+          }
+        ]
+      }
+    ]
+  },
+  "offerta_tecnica": {
+    "formato": "Max 20 pagine A4",
+    "carattere": "Times New Roman 11",
+    "interlinea": "1.5",
+    "esclusi_allegati": "CV, certificazioni, elaborazioni grafiche"
+  },
+  "offerta_economica": {
+    "punteggio_massimo": 20,
+    "modalita": "Ribasso percentuale unico",
+    "cifre_decimali": 5,
+    "applicazione": "Esclusivamente sulla quota disponibile del 35% del corrispettivo",
+    "vincolo": "Il ribasso deve essere identico per entrambi i lotti"
+  },
+  "garanzie": {
+    "garanzia_provvisoria": "Non dovuta",
+    "garanzia_definitiva": "2% dell'importo contrattuale",
+    "forma": "Cauzione o fideiussione"
+  },
+  "durata_accordo_quadro": {
+    "mesi": 36,
+    "inizio": "data di sottoscrizione",
+    "termine": "termine naturale o raggiungimento tetto massimo di spesa"
+  },
+  "revisione_prezzi": {
+    "ammessa": true,
+    "soglia_percentuale": 5,
+    "percentuale_applicabile": 80,
+    "indice_riferimento": "ISTAT Attività degli studi di architettura e d'ingegneria, collaudi e analisi tecniche",
+    "codice_ateco": "71"
+  },
+  "contributo_anac": {
+    "dovuto": true,
+    "lotto_1": 77.00,
+    "lotto_2": 77.00,
+    "lotto_3": 18.00,
+    "totale": 172.00
+  },
+  "imposta_bollo": {
+    "importo": 16.00,
+    "tributo": "1552",
+    "metodi_pagamento": [
+      "F24",
+      "Bonifico (per operatori esteri)",
+      "Marca da bollo"
+    ]
+  },
+  "sopralluogo": {
+    "obbligatorio": false,
+    "note": "Non previsto"
+  },
+  "esclusioni_automatiche": {
+    "riferimento": "art. 94 D.Lgs. 36/2023",
+    "applicazione": "Cause automatiche di esclusione"
+  },
+  "esclusioni_non_automatiche": {
+    "riferimento": "art. 95 D.Lgs. 36/2023",
+    "applicazione": "Previo contraddittorio con l'operatore economico"
+  },
+  "self_cleaning": {
+    "ammesso": true,
+    "riferimento": "art. 96 D.Lgs. 36/2023",
+    "eccezioni": "Irregolarità contributive e fiscali"
+  },
+  "aggiudicazione": {
+    "numero_lotti_massimi": 1,
+    "per_concorrente": "Ciascun concorrente può risultare aggiudicatario di un solo lotto",
+    "distribuzione": "Lotto 1 al primo classificato, Lotto 2 al secondo classificato, Lotto 3 al terzo classificato"
+  },
+  "vincoli_partecipazione": {
+    "partecipazione_entrambi_lotti": true,
+    "offerta_identica": true,
+    "medesima_forma_giuridica": true,
+    "nota_difformita": "In caso di difformità tra le offerte dei due lotti, prevale il contenuto dell'offerta formulata per il Lotto 1"
+  },
+  "tempistiche_esecuzione": {
+    "formula": "Tca = 365x3 x ln(P)",
+    "dove": {
+      "Tca": "Tempo per l'esecuzione del servizio, in giorni naturali e consecutivi",
+      "ln_P": "Log naturale dell'importo del servizio diviso importo totale Accordo Quadro"
+    },
+    "minimo_giorni": 20,
+    "decorrenza": "Dalla comunicazione formale di avvio del servizio"
+  },
+  "soccorso_istruttorio": {
+    "ammesso": true,
+    "termine_giorni": 7,
+    "applica_a": "Documentazione amministrativa",
+    "non_applica_a": "Offerta tecnica e offerta economica",
+    "riferimento": "art. 101 D.Lgs. 36/2023"
+  },
+  "conformita_cam": {
+    "decreto": "D.M. n. 256 del 23 giugno 2022",
+    "titolo": "Criteri ambientali minimi per l'affidamento di servizi di progettazione e affidamento di lavori per interventi edilizi",
+    "obbligo": "Conformità ai CAM richiesta",
+    "valutazione_bonus": "Proposte che superano i requisiti minimi"
+  },
+  "verifiche_anomalia": {
+    "soglia": "4/5 dei punti massimi per offerta economica e tecnica",
+    "numero_offerte_minimo": 3,
+    "riferimento": "art. 110 D.Lgs. 36/2023"
+  },
+  "documentazione_amministrativa": [
+    "Domanda di partecipazione",
+    "DGUE compilato online e firmato digitalmente",
+    "Procura (eventuale)",
+    "Dichiarazione per concordato preventivo (eventuale)",
+    "Documentazione avvalimento (eventuale)",
+    "Documentazione soggetti associati (eventuale)",
+    "Pagamento contributo ANAC",
+    "Documentazione pagamento imposta di bollo"
+  ],
+  "certificazioni_qualita": {
+    "iso_9001": 4,
+    "parità_genere": 4,
+    "punti_totali": 8
+  },
+  "giovani_professionisti": {
+    "criteri": "Laureati o diplomati iscritti al relativo ordine professionale da meno di 5 anni",
+    "punti_per_professionista": 3,
+    "massimo_professionisti": 2,
+    "punti_totali": 6
+  },
+  "commissione_giudicatrice": {
+    "numero_membri": 3,
+    "nomina": "Dopo la scadenza del termine per la presentazione delle offerte",
+    "requisiti": "Assenza di cause ostative ai sensi dell'art. 93 comma 5 D.Lgs. 36/2023",
+    "pubblicazione": "Sito istituzionale sezione Amministrazione trasparente"
+  },
+  "stipula_contratto": {
+    "forma_lotto_1_2": "Atto pubblico amministrativo",
+    "forma_lotto_3": "Scrittura privata",
+    "giorni_minimi_dai_comunicati": 32,
+    "giorni_massimi": 60,
+    "riferimento": "art. 18 comma 3 D.Lgs. 36/2023"
+  },
+  "polizza_responsabilita_civile": {
+    "obbligatoria": true,
+    "copertura": "Errori e omissioni nella progettazione",
+    "estensione": "Anche a collaboratori, dipendenti, praticanti e consulenti",
+    "validita_decorrenza": "Data di inizio lavori",
+    "validita_termine": "Data di emissione del certificato di collaudo provvisorio",
+    "mancata_presentazione": "Esonera l'amministrazione dal pagamento del corrispettivo"
+  },
+  "tracciabilita_flussi": {
+    "obbligata": true,
+    "riferimento": "Legge 13 agosto 2010, n. 136",
+    "istituti_ammessi": "Banche, Poste Italiane",
+    "tempo_comunicazione": "7 giorni dall'accensione conto",
+    "sanzione_omissione": "€500-€3.000",
+    "inadempimento": "Risoluzione di diritto del contratto"
+  },
+  "codice_comportamento": {
+    "applicabile": true,
+    "riferimento": "DPR 16 aprile 2013 n. 62",
+    "amministrazione": "Codice di comportamento della Città Metropolitana di Napoli",
+    "prevenzione_corruzione": "Piano Triennale di Prevenzione della Corruzione e della Trasparenza"
+  },
+  "accesso_atti": {
+    "modalita": "Digitale tramite Piattaforma",
+    "riferimento": "art. 35 D.Lgs. 36/2023",
+    "norme": "art. 36 Codice",
+    "funzione": "RICHIESTA ACCESSO ATTI online"
+  },
+  "controversie": {
+    "giurisdizione_amministrativa": "TAR Napoli",
+    "indirizzo": "Piazza Municipio, 64 - 80133 Napoli (NA)",
+    "termine_ricorso": "30 giorni",
+    "giurisdizione_contratto": "Foro di Napoli",
+    "arbitrato": "Escluso"
+  },
+  "note_finali": [
+    "Procedura suddivisa in 3 lotti",
+    "Conformità ai CAM D.M. n. 256 del 23 giugno 2022 richiesta",
+    "Accordo Quadro con unico operatore",
+    "Oggetto: progettazione, direzione lavori, coordinamento sicurezza e attività complementari",
+    "Possibile inversione procedimentale ex art. 107 comma 3 D.Lgs. 36/2023",
+    "Finanziamento: Fondi di Bilancio",
+    "Codice NUTS: ITF33 (Napoli)",
+    "Natura intellettuale del servizio: non ricorrono rischi di interferenze, nessun obbligo DUVRI"
+  ]
+}
