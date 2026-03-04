@@ -96,6 +96,7 @@
   .method-badge.rules { background: #e8f5e9; color: #2e7d32; }
   .method-badge.ml { background: #e3f2fd; color: #1565c0; }
   .method-badge.corrected { background: #fff3e0; color: #e65100; }
+  .page-badge { font-size: 0.55rem; padding: 1px 5px; border-radius: 3px; font-family: var(--font-m); letter-spacing: 0.04em; font-weight: 500; background: #f3e5f5; color: #7b1fa2; cursor: help; }
   .result-value { font-size: 0.95rem; color: var(--ink); font-weight: 500; line-height: 1.4; }
   .result-value.money { font-family: var(--font-m); font-size: 1.05rem; color: var(--ok); font-weight: 600; }
   .result-value.missing { color: #bbb; font-style: italic; font-weight: 400; font-size: 0.85rem; }
@@ -155,6 +156,25 @@
   .q-btn.approve:hover { background: #15693e; }
   .q-btn.reject { background: white; color: var(--accent); }
   .q-btn.reject:hover { background: #ffeee8; border-color: var(--accent); }
+  /* Coherence panel */
+  .coherence-banner { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
+  .coherence-title { font-family: var(--font-m); font-size: 0.68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 8px; }
+  .coherence-score { font-family: var(--font-h); font-size: 2rem; line-height: 1; }
+  .coherence-score.high { color: var(--ok); } .coherence-score.mid { color: var(--gold); } .coherence-score.low { color: var(--accent); }
+  .coherence-checks { display: flex; flex-direction: column; gap: 4px; margin-top: 0.6rem; }
+  .ccheck { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; padding: 4px 8px; border-radius: 4px; }
+  .ccheck.pass { color: var(--ok); background: #f0fff8; } .ccheck.fail { color: var(--accent); background: #fff5f2; } .ccheck.warn { color: var(--gold); background: #fffde8; }
+  .pdf-info-banner { background: linear-gradient(135deg, #e3f2fd 0%, #f3e5f5 100%); border: 1px solid #bbdefb; border-radius: 10px; padding: 0.8rem 1.2rem; margin-bottom: 1rem; display: flex; gap: 1.5rem; align-items: center; flex-wrap: wrap; font-size: 0.82rem; }
+  .pdf-info-item { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .pdf-info-value { font-family: var(--font-m); font-weight: 600; font-size: 0.85rem; }
+  .pdf-info-label { font-size: 0.65rem; color: var(--ink-soft); text-transform: uppercase; font-family: var(--font-m); letter-spacing: .06em; }
+  .tables-section { background: white; border: 1px solid var(--border); border-radius: var(--r); padding: 1rem; margin-bottom: 1rem; }
+  .parsed-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin-top: 6px; }
+  .parsed-table th { text-align: left; font-family: var(--font-m); font-size: 0.65rem; color: white; background: var(--ink); padding: 5px 8px; }
+  .parsed-table td { padding: 4px 8px; border-bottom: 1px solid #eee; }
+  .parsed-table tr:nth-child(even) { background: #fafaf8; }
+  .validation-warnings { display: flex; flex-direction: column; gap: 4px; margin-top: 0.6rem; }
+  .vwarn { font-size: 0.8rem; color: var(--gold); padding: 4px 8px; background: #fffde8; border-radius: 4px; border-left: 3px solid var(--gold); }
   .safe-learn-banner { background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border: 1px solid #c8e6c9; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; display: flex; gap: 12px; align-items: flex-start; }
   .safe-learn-stat { display: flex; flex-direction: column; align-items: center; padding: 0 1rem; border-right: 1px solid #c8e6c9; }
   .safe-learn-stat:last-child { border-right: none; }
@@ -259,11 +279,11 @@
       <div class="spinner"></div>
       <div style="font-family:var(--font-h);font-size:1.2rem;color:var(--ink)">Analisi in corso...</div>
       <div class="processing-steps">
-        <div class="proc-step" id="step-1"><span>📂</span> Lettura PDF</div>
-        <div class="proc-step" id="step-2"><span>🔍</span> Applicazione pattern (regex)</div>
-        <div class="proc-step" id="step-3"><span>🧠</span> Modelli ML (fallback)</div>
-        <div class="proc-step" id="step-4"><span>📍</span> Mapping contesto snippet</div>
-        <div class="proc-step" id="step-5"><span>✅</span> Risultato con confidenza</div>
+        <div class="proc-step" id="step-1"><span>📂</span> Parsing strutturato PDF (PyMuPDF)</div>
+        <div class="proc-step" id="step-2"><span>📊</span> Estrazione tabelle + Markdown</div>
+        <div class="proc-step" id="step-3"><span>🔍</span> Pattern regex + ML fallback</div>
+        <div class="proc-step" id="step-4"><span>📍</span> Page sourcing + snippet</div>
+        <div class="proc-step" id="step-5"><span>✅</span> Validazione coerenza</div>
       </div>
     </div>
 
@@ -283,8 +303,12 @@
         <button class="btn primary" onclick="exportJSON()">⬇️ JSON</button>
         <button class="btn" onclick="exportCSV()">📊 CSV</button>
         <button class="btn" onclick="copyResults()">📋 Copia</button>
+        <button class="btn" onclick="toggleTables()">📊 Tabelle PDF</button>
         <button class="btn" onclick="resetAnalysis()">🔄 Nuovo PDF</button>
       </div>
+      <div id="pdf-info-container"></div>
+      <div id="coherence-container"></div>
+      <div id="tables-container" style="display:none"></div>
       <div id="results-container"></div>
       <div id="notes-section" style="display:none;margin-top:1.2rem">
         <div style="font-family:var(--font-m);font-size:0.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:0.5rem">⚠ Aspetti da verificare</div>
@@ -377,6 +401,8 @@ let currentResult = null;
 let currentDocId = null;
 let currentSnippets = {};
 let currentMethods = {};
+let currentPageSources = {};
+let currentTablesJson = [];
 
 // ═══════════════════════════════════════════════════════════════
 // CONFIGURAZIONE CAMPI — mappati sull'output reale dell'AI
@@ -514,7 +540,12 @@ function resetAnalysis() {
   hideProcessing();
   document.getElementById('results-section').style.display='none';
   document.getElementById('upload-section').style.display='block';
-  currentResult=null; currentDocId=null; currentSnippets={}; currentMethods={};
+  document.getElementById('tables-container').style.display='none';
+  currentResult=null; currentDocId=null; currentSnippets={}; currentMethods={}; currentPageSources={}; currentTablesJson=[];
+}
+function toggleTables() {
+  const el = document.getElementById('tables-container');
+  el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -529,16 +560,84 @@ function showResults(data, filename) {
   currentDocId = data._doc_id;
   currentSnippets = data._snippets || {};
   currentMethods = data._methods || {};
+  currentPageSources = data._page_sources || {};
+  currentTablesJson = data._tables_json || [];
 
   document.getElementById('result-filename').textContent = filename;
   const ml = data._extraction_method==='hybrid' ? '🔵 Ibrido (Regole+ML)' : '🟢 Regole';
-  document.getElementById('result-meta').textContent = `${ml} · ${new Date(data._timestamp).toLocaleString('it-IT')}`;
+  const parserInfo = data._parser_used ? ` · 📄 ${data._parser_used}` : '';
+  const pagesInfo = data._total_pages ? ` · ${data._total_pages} pag.` : '';
+  document.getElementById('result-meta').textContent = `${ml}${parserInfo}${pagesInfo} · ${new Date(data._timestamp).toLocaleString('it-IT')}`;
 
   const conf = data._confidence || 0;
   const fill = document.getElementById('confidence-fill');
   fill.style.width = conf+'%';
   fill.className = 'confidence-fill '+(conf>=65?'high':conf>=35?'mid':'low');
   document.getElementById('confidence-pct').textContent = conf.toFixed(1)+'%';
+
+  // ── PDF Info Banner ──────────────────────────────────────────────
+  const pdfInfoEl = document.getElementById('pdf-info-container');
+  if (data._total_pages) {
+    const nativeLabel = data._is_native_pdf ? '✅ Nativo' : '⚠️ Scansionato';
+    const tablesN = data._tables_found || 0;
+    const chunksN = data._chunks_count || 0;
+    let warnsHtml = '';
+    if (data._pdf_warnings && data._pdf_warnings.length > 0) {
+      warnsHtml = `<div style="width:100%;margin-top:4px;font-size:0.76rem;color:var(--gold)">${data._pdf_warnings.join(' · ')}</div>`;
+    }
+    pdfInfoEl.innerHTML = `<div class="pdf-info-banner">
+      <div class="pdf-info-item"><div class="pdf-info-value">${data._total_pages}</div><div class="pdf-info-label">Pagine</div></div>
+      <div class="pdf-info-item"><div class="pdf-info-value">${nativeLabel}</div><div class="pdf-info-label">Tipo PDF</div></div>
+      <div class="pdf-info-item"><div class="pdf-info-value">${data._parser_used||'?'}</div><div class="pdf-info-label">Parser</div></div>
+      <div class="pdf-info-item"><div class="pdf-info-value">${tablesN}</div><div class="pdf-info-label">Tabelle</div></div>
+      <div class="pdf-info-item"><div class="pdf-info-value">${chunksN}</div><div class="pdf-info-label">Sezioni</div></div>
+      <div class="pdf-info-item"><div class="pdf-info-value">${Object.keys(currentPageSources).length}</div><div class="pdf-info-label">Campi con pagina</div></div>
+      ${warnsHtml}
+    </div>`;
+  } else { pdfInfoEl.innerHTML = ''; }
+
+  // ── Coherence Validation Panel ───────────────────────────────────
+  const cohEl = document.getElementById('coherence-container');
+  if (data._coherence) {
+    const coh = data._coherence;
+    const scoreClass = coh.coherence_score >= 0.8 ? 'high' : coh.coherence_score >= 0.5 ? 'mid' : 'low';
+    const checksHtml = (coh.details || []).map(d => {
+      const icon = d.status === 'pass' ? '✅' : d.status === 'fail' ? '❌' : '⚠️';
+      return `<div class="ccheck ${d.status}">${icon} ${d.message}</div>`;
+    }).join('');
+    const vWarns = (data._validation_warnings || []).map(w => `<div class="vwarn">${w}</div>`).join('');
+    cohEl.innerHTML = `<div class="coherence-banner">
+      <div class="coherence-title">🛡️ Validazione Coerenza</div>
+      <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:0.5rem">
+        <div class="coherence-score ${scoreClass}">${(coh.coherence_score*100).toFixed(0)}%</div>
+        <div style="font-size:0.82rem;color:var(--ink-soft)">
+          ✅ ${coh.passed} verifiche OK · ⚠️ ${coh.warnings} avvisi · ❌ ${coh.failures} problemi
+        </div>
+      </div>
+      <div class="coherence-checks">${checksHtml}</div>
+      ${vWarns ? `<div class="validation-warnings">${vWarns}</div>` : ''}
+    </div>`;
+  } else { cohEl.innerHTML = ''; }
+
+  // ── Tables container (hidden by default) ─────────────────────────
+  const tablesEl = document.getElementById('tables-container');
+  if (currentTablesJson.length > 0) {
+    let tablesHtml = '<div class="tables-section"><div class="section-header">📊 Tabelle estratte dal PDF</div>';
+    currentTablesJson.forEach((tbl, idx) => {
+      tablesHtml += `<div style="margin-bottom:12px"><div style="font-family:var(--font-m);font-size:0.7rem;color:var(--ink-soft);margin-bottom:4px">Tabella ${idx+1} — Pagina ${tbl.page||'?'}</div>`;
+      tablesHtml += '<table class="parsed-table"><thead><tr>';
+      (tbl.headers||[]).forEach(h => tablesHtml += `<th>${escapeHtml(h)}</th>`);
+      tablesHtml += '</tr></thead><tbody>';
+      (tbl.rows||[]).slice(0, 30).forEach(row => {
+        tablesHtml += '<tr>';
+        row.forEach(c => tablesHtml += `<td>${escapeHtml(c)}</td>`);
+        tablesHtml += '</tr>';
+      });
+      tablesHtml += '</tbody></table></div>';
+    });
+    tablesHtml += '</div>';
+    tablesEl.innerHTML = tablesHtml;
+  } else { tablesEl.innerHTML = ''; }
 
   const container = document.getElementById('results-container');
   container.innerHTML = '';
@@ -555,6 +654,7 @@ function showResults(data, filename) {
       const val = data[cfg.key];
       const method = currentMethods[cfg.key];
       const snippet = currentSnippets[cfg.key];
+      const pageNum = currentPageSources[cfg.key];
       const empty = val===null||val===undefined||val===''||val===0||(Array.isArray(val)&&val.length===0);
 
       const card = document.createElement('div');
@@ -565,6 +665,8 @@ function showResults(data, filename) {
       if(method==='ml') badge='<span class="method-badge ml">ML</span>';
       else if(method==='corrected') badge='<span class="method-badge corrected">CORRETTO</span>';
       else if(method) badge='<span class="method-badge rules">REGOLE</span>';
+      let pageBadge = '';
+      if(pageNum) pageBadge=`<span class="page-badge" title="Trovato a pagina ${pageNum}">p.${pageNum}</span>`;
 
       let valHtml;
       if(empty) valHtml='<div class="result-value missing">— Non rilevato</div>';
@@ -580,7 +682,7 @@ function showResults(data, filename) {
       card.innerHTML = `
         <div class="card-top">
           <div class="result-label"><span class="icon">${cfg.icon}</span>${cfg.label}</div>
-          <div class="card-badges">${badge}<div class="card-actions">${snippetBtn}${editBtn}</div></div>
+          <div class="card-badges">${badge}${pageBadge}<div class="card-actions">${snippetBtn}${editBtn}</div></div>
         </div>
         ${valHtml}
         <div class="snippet-panel" id="snippet-${cfg.key}"></div>

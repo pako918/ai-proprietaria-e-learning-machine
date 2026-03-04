@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia il progetto
-COPY ai_engine.py server.py index.html ./
+COPY ai_engine.py server.py pdf_parser.py schemas.py index.html ./
 
 # Crea cartelle dati
 RUN mkdir -p data/uploads models

@@ -14,6 +14,8 @@ sys.path.insert(0, os.path.dirname(__file__))
 from pathlib import Path
 from datetime import datetime
 from ai_engine import extractor
+from pdf_parser import parse_pdf, get_text_with_tables, get_page_for_text, ParsedDocument
+from schemas import validate_extraction, full_validation, CoherenceValidator
 
 # ─── Dipendenze: supporta sia FastAPI che fallback HTTP puro ──────────────────
 try:
@@ -26,66 +28,46 @@ try:
 except ImportError:
     HAS_FASTAPI = False
 
-# PDF parsing
-try:
-    import pdfplumber
-    HAS_PDFPLUMBER = True
-except ImportError:
-    HAS_PDFPLUMBER = False
-
-try:
-    import PyPDF2
-    HAS_PYPDF2 = True
-except ImportError:
-    HAS_PYPDF2 = False
-
 BASE_DIR = Path(__file__).parent
 UPLOAD_DIR = BASE_DIR / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PDF TEXT EXTRACTION
+# PDF TEXT EXTRACTION — usa il nuovo pdf_parser strutturato
 # ═════════════════════════════════════════════════════════════════════════════
 
-def extract_text_from_pdf(pdf_bytes: bytes) -> str:
-    """Estrae testo da PDF con multiple strategie"""
-    text = ""
+# Cache ultimo documento parsato per accesso rapido ai metadati
+_last_parsed: dict = {}
 
-    if HAS_PDFPLUMBER:
-        try:
-            with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text() or ""
-                    text += page_text + "\n"
-            if text.strip():
-                return text
-        except Exception as e:
-            pass
-
-    if HAS_PYPDF2:
-        try:
-            reader = PyPDF2.PdfReader(io.BytesIO(pdf_bytes))
-            for page in reader.pages:
-                text += page.extract_text() + "\n"
-            if text.strip():
-                return text
-        except Exception as e:
-            pass
-
-    # Fallback: estrazione raw con regex su PDF binario
+def extract_text_from_pdf(pdf_bytes: bytes, filename: str = "document.pdf") -> str:
+    """Estrae testo da PDF con il nuovo parser strutturato.
+    Il ParsedDocument completo è accessibile in _last_parsed[filename]."""
+    global _last_parsed
     try:
-        raw = pdf_bytes.decode("latin-1", errors="ignore")
-        # Trova stream di testo nel PDF
-        text_parts = re.findall(r'BT\s+(.*?)\s+ET', raw, re.DOTALL)
-        for part in text_parts:
-            # Estrai stringhe tra parentesi
-            strings = re.findall(r'\(([^)]{1,200})\)', part)
-            text += " ".join(strings) + "\n"
-    except:
+        parsed = parse_pdf(pdf_bytes, filename)
+        _last_parsed[filename] = parsed
+        # Usa markdown (testo + tabelle formattate) per la migliore estrazione
+        text = get_text_with_tables(parsed)
+        if text and len(text.strip()) > 50:
+            return text
+    except Exception:
         pass
 
-    return text or "[Impossibile estrarre testo dal PDF - potrebbe essere scansionato]"
+    # Fallback legacy: pdfplumber diretto
+    try:
+        import pdfplumber
+        text = ""
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages:
+                page_text = page.extract_text() or ""
+                text += page_text + "\n"
+        if text.strip():
+            return text
+    except Exception:
+        pass
+
+    return "[Impossibile estrarre testo dal PDF - potrebbe essere scansionato]"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -125,16 +107,18 @@ if HAS_FASTAPI:
     @app.get("/api/health")
     async def health():
         stats = extractor.get_stats()
+        from pdf_parser import HAS_FITZ, HAS_PDFPLUMBER
+        parser = "fitz+pdfplumber" if HAS_FITZ else ("pdfplumber" if HAS_PDFPLUMBER else "fallback")
         return {
             "status": "ok",
-            "pdf_parser": "pdfplumber" if HAS_PDFPLUMBER else ("PyPDF2" if HAS_PYPDF2 else "fallback"),
+            "pdf_parser": parser,
             "ml_models_loaded": len(extractor.ml_models),
             "stats": stats
         }
 
     @app.post("/api/extract")
     async def extract_pdf(file: UploadFile = File(...)):
-        """Carica PDF ed estrae i dati automaticamente"""
+        """Carica PDF ed estrae i dati automaticamente con parsing strutturato"""
         if not file.filename.lower().endswith(".pdf"):
             raise HTTPException(400, "Solo file PDF accettati")
 
@@ -142,15 +126,45 @@ if HAS_FASTAPI:
         if len(content) > 50 * 1024 * 1024:  # 50MB max
             raise HTTPException(400, "File troppo grande (max 50MB)")
 
-        # Estrai testo
-        text = extract_text_from_pdf(content)
+        # ── Smart PDF parsing (strutturato) ───────────────────────────
+        text = extract_text_from_pdf(content, file.filename)
         if len(text.strip()) < 50:
             raise HTTPException(422, "Impossibile estrarre testo dal PDF. Il file potrebbe essere scansionato senza OCR.")
 
-        # AI extraction
+        # ── AI extraction ─────────────────────────────────────────────
         result = extractor.extract(text, file.filename)
         result["_text_length"] = len(text)
         result["_filename"] = file.filename
+
+        # ── Page sourcing: mappa ogni campo alla pagina sorgente ──────
+        parsed = _last_parsed.get(file.filename)
+        if parsed and parsed.pages:
+            page_sources = {}
+            for field, value in result.items():
+                if field.startswith('_') or value is None or value == "":
+                    continue
+                if isinstance(value, (bool, dict, list)):
+                    continue
+                page = get_page_for_text(parsed, str(value))
+                if page:
+                    page_sources[field] = page
+            result["_page_sources"] = page_sources
+            result["_total_pages"] = parsed.total_pages
+            result["_is_native_pdf"] = parsed.is_native
+            result["_parser_used"] = parsed.parser_used
+            result["_pdf_metadata"] = parsed.metadata
+            result["_pdf_warnings"] = parsed.warnings
+            result["_tables_found"] = len(parsed.tables_json)
+            result["_tables_json"] = parsed.tables_json[:20]  # Max 20 tabelle
+            result["_chunks_count"] = len(parsed.chunks)
+
+        # ── Coherence validation ──────────────────────────────────────
+        try:
+            validation = full_validation(result)
+            result["_coherence"] = validation["coherence"]
+            result["_validation_warnings"] = validation["warnings"]
+        except Exception:
+            pass
 
         return JSONResponse(content=result)
 
@@ -257,6 +271,39 @@ if HAS_FASTAPI:
     async def auto_learn_stats():
         """Statistiche sul safe auto-learning."""
         return extractor.get_auto_learn_stats()
+
+    @app.post("/api/validate")
+    async def validate_result(payload: dict):
+        """Valida un risultato di estrazione con Pydantic + coherence check."""
+        try:
+            validation = full_validation(payload)
+            return JSONResponse(content=validation)
+        except Exception as e:
+            raise HTTPException(500, f"Errore validazione: {str(e)}")
+
+    @app.get("/api/pdf-info/{doc_id}")
+    async def get_pdf_info(doc_id: str):
+        """Ritorna info strutturali del PDF parsato (tabelle, chunks, metadati)."""
+        # Cerca nel cache
+        for fname, parsed in _last_parsed.items():
+            if doc_id in fname or True:  # Serve l'ultimo parsato
+                return {
+                    "filename": parsed.filename,
+                    "is_native": parsed.is_native,
+                    "total_pages": parsed.total_pages,
+                    "parser_used": parsed.parser_used,
+                    "metadata": parsed.metadata,
+                    "warnings": parsed.warnings,
+                    "tables": parsed.tables_json[:20],
+                    "chunks": [
+                        {"type": c.chunk_type, "title": c.title,
+                         "pages": f"{c.page_start}-{c.page_end}",
+                         "section": c.section_path,
+                         "length": len(c.content)}
+                        for c in parsed.chunks[:50]
+                    ],
+                }
+        raise HTTPException(404, "Documento non in cache")
 
     if __name__ == "__main__":
         uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
