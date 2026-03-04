@@ -1,10 +1,7 @@
 """
-AppaltoAI - Motore Ibrido CALIBRATO
+AppaltoAI - Motore Ibrido MODULARE
 Addestrato su bandi reali D.Lgs. 36/2023 - Servizi di Ingegneria e Architettura
-Pattern derivati da:
-  - Città Metropolitana di Napoli (SI049/2025) - 3 lotti accordo quadro
-  - CUC Valle del Sabato / Comune di Serino (AV) - DL+CSE torrente
-  - Risorse per Roma S.p.A. - ERP progettazione esecutiva 2 lotti
+Usa field_registry.py come fonte unica di verità per i campi.
 """
 
 import re
@@ -18,6 +15,8 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
 
+from field_registry import registry, get_validator
+
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
 MODEL_DIR = BASE_DIR / "models"
@@ -26,76 +25,25 @@ DATA_DIR.mkdir(exist_ok=True)
 MODEL_DIR.mkdir(exist_ok=True)
 
 # ═════════════════════════════════════════════════════════════════════════════
-# VALIDATORI FORMATO — ogni campo ha una regola di validazione
-# Solo i valori che passano la validazione possono entrare nel safe auto-learn
+# VALIDATORI — delegati al field_registry per campi built-in e custom
 # ═════════════════════════════════════════════════════════════════════════════
 
-def _valid_importo(v):
-    """Verifica che sia un importo monetario sensato (> 0 e < 10 miliardi)"""
-    try:
-        s = str(v).replace('€','').replace('.','').replace(',','.').strip()
-        num = float(re.sub(r'[^\d.]', '', s))
-        return 0 < num < 10_000_000_000
-    except: return False
+def _get_field_validator(field_name):
+    """Ritorna il validatore per un campo dal registry."""
+    fd = registry.get(field_name)
+    if fd and fd.validator_type:
+        return get_validator(fd.validator_type)
+    return None
 
-def _valid_punteggio(v):
-    try: return 0 < int(v) <= 100
-    except: return False
-
-def _valid_date(v):
-    return bool(re.search(r'\d{1,2}[/\-.][\d]{1,2}[/\-.][\d]{2,4}', str(v)))
-
-def _valid_nonempty(v):
-    return isinstance(v, str) and len(v.strip()) >= 3
-
-FIELD_VALIDATORS = {
-    # Identificativi — formato rigido
-    "cig":  lambda v: bool(re.match(r'^[A-Z0-9]{10}$', str(v).strip())),
-    "cup":  lambda v: bool(re.match(r'^[A-Z]\d{2}[A-Z]\d{11}$', str(v).strip())),
-    "cpv":  lambda v: bool(re.match(r'^\d{8}-\d$', str(v).strip())),
-    "nuts_code": lambda v: bool(re.match(r'^IT[A-Z]\d{2,3}$', str(v).strip())),
-    # Soggetti — devono avere almeno 5 char
-    "stazione_appaltante":       lambda v: isinstance(v, str) and len(v.strip()) >= 5,
-    "amministrazione_delegante": lambda v: isinstance(v, str) and len(v.strip()) >= 5,
-    "rup":                       lambda v: isinstance(v, str) and len(v.strip()) >= 4,
-    "responsabile_procedimento": lambda v: isinstance(v, str) and len(v.strip()) >= 4,
-    # Oggetto
-    "oggetto_appalto":    lambda v: isinstance(v, str) and len(v.strip()) >= 15,
-    "tipo_procedura":     lambda v: isinstance(v, str) and v != "Non specificata" and len(v) > 3,
-    "criterio_aggiudicazione": lambda v: isinstance(v, str) and v != "Non specificato" and len(v) > 3,
-    # Importi
-    "importo_totale":       _valid_importo,
-    "importo_base_gara":    _valid_importo,
-    "garanzia_provvisoria": _valid_importo,
-    "contributo_anac":      _valid_importo,
-    "imposta_bollo":        _valid_importo,
-    "fatturato_minimo":     _valid_importo,
-    # Punteggi (0 < p <= 100)
-    "punteggio_tecnica":            _valid_punteggio,
-    "punteggio_economica":          _valid_punteggio,
-    "soglia_sbarramento_tecnica":   _valid_punteggio,
-    "pti_giovani_professionisti":   _valid_punteggio,
-    "pti_iso_9001":                 _valid_punteggio,
-    "pti_parita_genere":            _valid_punteggio,
-    # Date
-    "termine_chiarimenti":  _valid_date,
-    # Testo libero
-    "durata_contratto":     _valid_nonempty,
-    "piattaforma_url":      lambda v: isinstance(v, str) and v.startswith('http'),
-    "subappalto":           _valid_nonempty,
-    "avvalimento":          _valid_nonempty,
-    "verifica_anomalia":    _valid_nonempty,
-    "finanziamento":        _valid_nonempty,
-    "garanzia_definitiva":  _valid_nonempty,
-}
-
-# Soglie di confidenza per auto-learn sicuro
-AUTO_LEARN_THRESHOLD = 0.85   # >= 85% → auto-learn
-QUARANTINE_THRESHOLD = 0.50   # 50-85% → quarantena (review umana)
-# Campi ESCLUSI dall'auto-learn (troppo rischiosi o complessi)
-AUTO_LEARN_BLACKLIST = {'note_operative', 'lotti', 'criteri_tecnici', 'vincoli_lotti',
-                        'scadenze', 'struttura_compenso_65_35', 'sopralluogo',
-                        'categorie_ingegneria'}
+# Soglie di confidenza per quarantena supervisionata
+# PRINCIPIO: Mai training automatico continuo. Sempre supervisionato.
+# Dati estratti con buona confidenza → quarantena per review umano
+# Training SOLO quando l'utente lo attiva esplicitamente
+QUARANTINE_THRESHOLD = 0.50   # >= 50% → quarantena per review umana
+# Campi ESCLUSI dalla quarantena (troppo complessi per singolo campo)
+QUARANTINE_BLACKLIST = {'note_operative', 'lotti', 'criteri_tecnici', 'vincoli_lotti',
+                        'scadenze', 'struttura_compenso_65_35',
+                        'categorie_ingegneria', 'sopralluogo_note'}
 
 # ═════════════════════════════════════════════════════════════════════════════
 # PATTERN CALIBRATI SUI BANDI REALI
@@ -601,6 +549,22 @@ class AppaltoExtractor:
 
     # ── ESTRAZIONE PRINCIPALE ─────────────────────────────────────────────
 
+    def _extract_with_registry_patterns(self, text: str, field_key: str) -> str:
+        """Estrae un valore usando i pattern dal field_registry (per campi custom e nuovi)."""
+        fd = registry.get(field_key)
+        if not fd or not fd.patterns:
+            return None
+        for pat in fd.patterns:
+            try:
+                m = re.search(pat, text, re.I | re.MULTILINE)
+                if m:
+                    val = self.clean(m.group(1) if m.lastindex else m.group(0))
+                    if val and len(val) >= 2:
+                        return val
+            except Exception:
+                continue
+        return None
+
     def extract(self, text: str, filename: str = "") -> dict:
         r = {}
 
@@ -611,17 +575,21 @@ class AppaltoExtractor:
         cpvs = self.all_matches(text, PATTERNS["cpv"])
         r["cpv"] = cpvs[0] if len(cpvs) == 1 else (cpvs if cpvs else None)
         r["nuts_code"] = self.first_match(text, PATTERNS["nuts_code"])
+        r["codice_progetto"] = self._extract_with_registry_patterns(text, "codice_progetto")
 
         # Soggetti
         r["stazione_appaltante"] = self.first_match(text, PATTERNS["stazione_appaltante"])
         r["amministrazione_delegante"] = self.first_match(text, PATTERNS["amministrazione_delegante"])
         r["rup"] = self.first_match(text, PATTERNS["rup"])
         r["responsabile_procedimento"] = self.first_match(text, PATTERNS["responsabile_procedimento"])
+        r["direttore_esecuzione"] = self._extract_with_registry_patterns(text, "direttore_esecuzione")
+        r["coordinatore_sicurezza"] = self._extract_with_registry_patterns(text, "coordinatore_sicurezza")
 
         # Oggetto e procedura
         r["oggetto_appalto"] = self.first_match(text, PATTERNS["oggetto_appalto"])
         r["tipo_procedura"] = self.classify_procedure(text)
         r["criterio_aggiudicazione"] = self.classify_criterio(text)
+        r["luogo_esecuzione"] = self._extract_with_registry_patterns(text, "luogo_esecuzione")
 
         # Accordo quadro
         r["is_accordo_quadro"] = bool(re.search(r'accordo\s+quadro', text, re.I))
@@ -638,9 +606,12 @@ class AppaltoExtractor:
         # Importi
         r["importo_totale"] = self.normalize_amount(self.first_match(text, PATTERNS["importo_totale"]))
         r["importo_base_gara"] = self.normalize_amount(self.first_match(text, PATTERNS["importo_base_gara"]))
+        r["oneri_sicurezza"] = self.normalize_amount(self._extract_with_registry_patterns(text, "oneri_sicurezza"))
+        r["costi_manodopera"] = self.normalize_amount(self._extract_with_registry_patterns(text, "costi_manodopera"))
         r["struttura_compenso_65_35"] = self.extract_struttura_compenso(text)
         r["garanzia_provvisoria"] = self.normalize_amount(self.first_match(text, PATTERNS["garanzia_provvisoria"]))
         r["garanzia_definitiva"] = self.first_match(text, PATTERNS["garanzia_definitiva"])
+        r["anticipazione"] = self._extract_with_registry_patterns(text, "anticipazione")
 
         # Punteggi OEPV
         r["punteggio_tecnica"] = self.extract_int(text, PATTERNS["punteggio_tecnica"])
@@ -655,8 +626,10 @@ class AppaltoExtractor:
 
         # Tempistiche
         r["scadenze"] = self.extract_scadenze(text)
+        r["scadenza_offerte"] = self._extract_with_registry_patterns(text, "scadenza_offerte")
         r["termine_chiarimenti"] = self.first_match(text, PATTERNS["termine_chiarimenti"])
         r["durata_contratto"] = self.first_match(text, PATTERNS["durata_contratto"])
+        r["termine_esecuzione"] = self._extract_with_registry_patterns(text, "termine_esecuzione")
 
         # Categorie tecniche ingegneria
         r["categorie_ingegneria"] = self.extract_categorie_ingegneria(text)
@@ -664,9 +637,13 @@ class AppaltoExtractor:
         # Requisiti
         r["periodo_requisiti_anni"] = self.extract_int(text, PATTERNS["periodo_anni"])
         r["fatturato_minimo"] = self.normalize_amount(self.first_match(text, PATTERNS["fatturato_minimo"]))
+        r["polizza_professionale"] = self._extract_with_registry_patterns(text, "polizza_professionale")
+        r["requisiti_soa"] = self._extract_with_registry_patterns(text, "requisiti_soa")
 
-        # Sopralluogo
-        r["sopralluogo"] = self.extract_sopralluogo(text)
+        # Sopralluogo — campo separato per obbligatorio e note
+        sopralluogo_data = self.extract_sopralluogo(text)
+        r["sopralluogo_obbligatorio"] = sopralluogo_data.get("obbligatorio", False)
+        r["sopralluogo_note"] = sopralluogo_data.get("note")
 
         # Piattaforma
         r["piattaforma_url"] = self.first_match(text, PATTERNS["piattaforma_url"])
@@ -683,6 +660,13 @@ class AppaltoExtractor:
         r["revisione_prezzi"] = bool(re.search(r'revisione\s+(?:dei\s+)?prezzi', text, re.I))
         r["conformita_cam"] = bool(re.search(r'\bCAM\b|criteri\s+ambientali\s+minimi', text, re.I))
         r["inversione_procedimentale"] = bool(re.search(r'inversione\s+procedimentale', text, re.I))
+        r["soccorso_istruttorio"] = bool(re.search(r'soccorso\s+istruttorio', text, re.I))
+        r["clausola_sociale"] = bool(re.search(r'clausola\s+sociale|riassorbimento\s+(?:del\s+)?personale', text, re.I))
+
+        # Condizioni contrattuali
+        r["penali"] = self._extract_with_registry_patterns(text, "penali")
+        r["modalita_pagamento"] = self._extract_with_registry_patterns(text, "modalita_pagamento")
+        r["garanzia_provvisoria_ridotta"] = self._extract_with_registry_patterns(text, "garanzia_provvisoria_ridotta")
 
         # Anomalia
         r["verifica_anomalia"] = self.first_match(text, PATTERNS["verifica_anomalia"])
@@ -692,6 +676,23 @@ class AppaltoExtractor:
 
         # Note operative
         r["note_operative"] = self.extract_note_operative(text)
+
+        # ── Estrai campi CUSTOM dal registry ─────────────────────────────
+        for fd in registry.get_custom_fields():
+            if fd.key not in r and fd.patterns:
+                if fd.field_type == "boolean":
+                    # Per campi booleani custom, verifica se almeno un pattern matcha
+                    r[fd.key] = any(re.search(p, text, re.I) for p in fd.patterns)
+                elif fd.field_type == "money":
+                    r[fd.key] = self.normalize_amount(self._extract_with_registry_patterns(text, fd.key))
+                elif fd.field_type == "number":
+                    val = self._extract_with_registry_patterns(text, fd.key)
+                    try:
+                        r[fd.key] = int(re.search(r'\d+', str(val)).group()) if val else None
+                    except:
+                        r[fd.key] = None
+                else:
+                    r[fd.key] = self._extract_with_registry_patterns(text, fd.key)
 
         # ── Traccia snippet e metodo per ogni campo ──────────────────────
         _snippets = {}
@@ -762,11 +763,13 @@ class AppaltoExtractor:
         r["_extraction_method"] = "hybrid" if any(m == "ml" for m in _methods.values()) else "rules"
         r["_timestamp"] = datetime.now().isoformat()
 
-        # Salva e auto-learn
+        # Genera doc_id (il salvataggio è gestito dalla pipeline)
         doc_id = hashlib.sha256((filename + text[:500]).encode()).hexdigest()[:16]
-        self._save_document(doc_id, filename, text, r)
-        self._auto_learn(r, text)
         r["_doc_id"] = doc_id
+
+        # Quarantena supervisionata — raccoglie candidati per review umano
+        # MAI training automatico. L'utente decide quando riaddestrare.
+        self._collect_for_review(r, text)
 
         return r
 
@@ -775,9 +778,9 @@ class AppaltoExtractor:
     # ═════════════════════════════════════════════════════════════════════
 
     def _validate_field(self, field, value):
-        """Valida un valore estratto con il validatore specifico del campo.
+        """Valida un valore estratto con il validatore dal registry.
         Ritorna True se il valore è nel formato corretto."""
-        validator = FIELD_VALIDATORS.get(field)
+        validator = _get_field_validator(field)
         if not validator:
             return True  # Nessun validatore = accetta (per campi booleani/flag)
         try:
@@ -821,22 +824,21 @@ class AppaltoExtractor:
 
         return max(0.0, min(score, 1.0))
 
-    def _auto_learn(self, result, text):
-        """Safe auto-learning: impara automaticamente solo da estrazioni
-        che superano validazione E confidenza alta.
-        Risultati dubbi vanno in quarantena per review umano."""
+    def _collect_for_review(self, result, text):
+        """Raccolta supervisionata: i dati estratti vengono proposti per review umano.
+        MAI training automatico continuo. Sempre supervisionato.
+        L'utente approva → va nel dataset. Poi l'utente sceglie quando riaddestrare."""
         methods = result.get("_methods", {})
         snippets = result.get("_snippets", {})
         doc_id = result.get("_doc_id", "")
 
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
-        auto_learned = 0
         quarantined = 0
 
         for field, value in result.items():
             # Skip metadata e campi complessi
-            if field.startswith('_') or field in AUTO_LEARN_BLACKLIST:
+            if field.startswith('_') or field in QUARANTINE_BLACKLIST:
                 continue
             if value is None or value == "" or value == 0:
                 continue
@@ -853,12 +855,16 @@ class AppaltoExtractor:
             confidence = self._per_field_confidence(field, value, method, text)
 
             # ── Step 3: Anti-duplicazione ───────────────────────────
-            existing = c.execute(
+            # Controlla se già in quarantena o nel training set
+            existing_train = c.execute(
                 "SELECT COUNT(*) FROM training_samples WHERE field=? AND correct_value=?",
                 (field, val_str)
             ).fetchone()[0]
-            if existing > 0:
-                # Già presente → skip (non duplicare)
+            existing_quarantine = c.execute(
+                "SELECT COUNT(*) FROM quarantine WHERE field=? AND value=? AND status='pending'",
+                (field, val_str)
+            ).fetchone()[0]
+            if existing_train > 0 or existing_quarantine > 0:
                 c.execute(
                     "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
                     (doc_id, field, val_str, confidence, int(is_valid), "skip", "duplicato_esistente")
@@ -870,24 +876,12 @@ class AppaltoExtractor:
             if not snippet:
                 snippet = self._find_value_context(text, val_str, window=400)
             if not snippet or len(snippet) < 20:
-                snippet = text[:1500]  # Fallback minimo
+                snippet = text[:1500]
 
-            # ── Step 5: Decisione AUTO-LEARN / QUARANTENA / SKIP ────
-            if is_valid and confidence >= AUTO_LEARN_THRESHOLD:
-                # ✅ ALTO → auto-learn direttamente
-                c.execute(
-                    "INSERT INTO training_samples (field, text_snippet, correct_value) VALUES (?,?,?)",
-                    (field, snippet[:2000], val_str)
-                )
-                c.execute(
-                    "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
-                    (doc_id, field, val_str, confidence, 1, "auto_learned",
-                     f"conf={confidence:.2f}, valid=True, method={method}")
-                )
-                auto_learned += 1
-
-            elif is_valid and confidence >= QUARANTINE_THRESHOLD:
-                # ⚠️ MEDIO → quarantena (review umano)
+            # ── Step 5: Decisione QUARANTENA / SKIP ─────────────────
+            # SUPERVISIONATO: tutto va in quarantena per review umano
+            # Nessun auto-learn automatico.
+            if is_valid and confidence >= QUARANTINE_THRESHOLD:
                 c.execute(
                     "INSERT INTO quarantine (doc_id, field, value, snippet, confidence) VALUES (?,?,?,?,?)",
                     (doc_id, field, val_str, snippet[:2000], confidence)
@@ -895,7 +889,7 @@ class AppaltoExtractor:
                 c.execute(
                     "INSERT INTO auto_learn_log (doc_id, field, value, confidence, validation_ok, action, reason) VALUES (?,?,?,?,?,?,?)",
                     (doc_id, field, val_str, confidence, 1, "quarantined",
-                     f"conf={confidence:.2f} < {AUTO_LEARN_THRESHOLD} threshold")
+                     f"conf={confidence:.2f}, valid=True, method={method}")
                 )
                 quarantined += 1
 
@@ -908,16 +902,12 @@ class AppaltoExtractor:
                 )
 
         conn.commit()
-
-        # ── Step 6: Trigger training se abbastanza campioni ─────────
-        fields_to_check = set(f for f, _ in methods.items() if f not in AUTO_LEARN_BLACKLIST)
-        for field in fields_to_check:
-            count = c.execute("SELECT COUNT(*) FROM training_samples WHERE field=?", (field,)).fetchone()[0]
-            if count >= 5 and count % 3 == 0:
-                self._safe_train_with_rollback(field)
-
         conn.close()
-        return {"auto_learned": auto_learned, "quarantined": quarantined}
+
+        # MAI trigger automatico di training qui.
+        # Il training è attivato SOLO dall'utente tramite API /api/train/{field}
+
+        return {"quarantined": quarantined}
 
     # ── Quarantine management ──────────────────────────────────────────
     def get_quarantine(self, limit=50):
@@ -937,7 +927,8 @@ class AppaltoExtractor:
         ]
 
     def approve_quarantine(self, qid):
-        """Approva un campione dalla quarantena → diventa training sample."""
+        """Approva un campione dalla quarantena → diventa training sample.
+        NON triggera training automatico. L'utente decide quando riaddestrare."""
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         row = c.execute("SELECT field, value, snippet FROM quarantine WHERE id=? AND status='pending'", (qid,)).fetchone()
@@ -945,20 +936,16 @@ class AppaltoExtractor:
             conn.close()
             return {"status": "error", "message": "Campione non trovato o gia' processato"}
         field, value, snippet = row
-        # Aggiungi al training
+        # Aggiungi al dataset di training
         c.execute("INSERT INTO training_samples (field, text_snippet, correct_value) VALUES (?,?,?)",
                   (field, snippet, value))
         c.execute("UPDATE quarantine SET status='approved', reviewed_at=? WHERE id=?",
                   (datetime.now().isoformat(), qid))
         conn.commit()
-        # Check training trigger
         count = c.execute("SELECT COUNT(*) FROM training_samples WHERE field=?", (field,)).fetchone()[0]
         conn.close()
-        retrained = False
-        if count >= 5 and count % 3 == 0:
-            self._safe_train_with_rollback(field)
-            retrained = True
-        return {"status": "ok", "field": field, "sample_count": count, "retrained": retrained}
+        # MAI training automatico qui. L'utente attiva il training manualmente.
+        return {"status": "ok", "field": field, "sample_count": count, "retrained": False}
 
     def reject_quarantine(self, qid):
         """Rifiuta un campione dalla quarantena → non entra nel training."""
@@ -1122,6 +1109,8 @@ class AppaltoExtractor:
         return pipeline, msg
 
     def record_correction(self, doc_id, field, original, corrected, snippet=""):
+        """Registra una correzione umana. Aggiunge al dataset per training supervisionato.
+        NON triggera training automatico."""
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
 
@@ -1132,12 +1121,10 @@ class AppaltoExtractor:
         # Cerca il contesto migliore per il training
         training_snippet = snippet
         if full_text:
-            # Prima: cerca il valore CORRETTO nel testo del PDF
             ctx = self._find_value_context(full_text, corrected, window=500)
             if ctx and len(ctx) > 20:
                 training_snippet = ctx
             elif original:
-                # Fallback: cerca il valore ORIGINALE (errato)
                 ctx = self._find_value_context(full_text, original, window=500)
                 if ctx and len(ctx) > 20:
                     training_snippet = ctx
@@ -1159,13 +1146,9 @@ class AppaltoExtractor:
         conn.commit()
         conn.close()
 
-        # Soglia più bassa = apprendimento più veloce
         count = self._get_sample_count(field)
-        retrained = False
-        if count >= 5 and count % 3 == 0:
-            self._safe_train_with_rollback(field)
-            retrained = True
-        return retrained
+        # MAI training automatico. Solo supervisionato.
+        return False
 
     def _save_document(self, doc_id, filename, text, extracted):
         conn = sqlite3.connect(DB_PATH)
@@ -1233,6 +1216,158 @@ class AppaltoExtractor:
             except:
                 pass
         return result
+
+    # ═══════════════════════════════════════════════════════════════════
+    # CORRECTIONS CRUD — gestione completa correzioni e training samples
+    # ═══════════════════════════════════════════════════════════════════
+
+    def get_corrections(self, limit=200):
+        """Restituisce tutte le correzioni (feedback_log + training_samples legati).
+        Ogni record include id, doc_id, campo, valore originale, corretto, data, snippet."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        # Feedback log con join ai training samples
+        rows = c.execute("""
+            SELECT f.id, f.doc_id, f.field, f.original, f.corrected, f.timestamp,
+                   t.id as sample_id, t.text_snippet
+            FROM feedback_log f
+            LEFT JOIN training_samples t ON t.field = f.field AND t.correct_value = f.corrected
+                AND t.wrong_value = f.original
+            ORDER BY f.timestamp DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        corrections = []
+        seen = set()
+        for r in rows:
+            key = (r[0], r[6])  # feedback_id, sample_id
+            if key in seen:
+                continue
+            seen.add(key)
+            corrections.append({
+                "id": r[0],
+                "doc_id": r[1],
+                "field": r[2],
+                "original": r[3],
+                "corrected": r[4],
+                "timestamp": r[5],
+                "sample_id": r[6],
+                "snippet": (r[7] or "")[:300],
+            })
+
+        # Anche training samples senza feedback (manuali o auto-learned)
+        manual_rows = c.execute("""
+            SELECT t.id, t.field, t.text_snippet, t.correct_value, t.wrong_value, t.created_at
+            FROM training_samples t
+            WHERE NOT EXISTS (
+                SELECT 1 FROM feedback_log f
+                WHERE f.field = t.field AND f.corrected = t.correct_value
+            )
+            ORDER BY t.created_at DESC
+            LIMIT ?
+        """, (limit,)).fetchall()
+
+        for r in manual_rows:
+            corrections.append({
+                "id": None,
+                "doc_id": None,
+                "field": r[1],
+                "original": r[4] or "",
+                "corrected": r[3],
+                "timestamp": r[5],
+                "sample_id": r[0],
+                "snippet": (r[2] or "")[:300],
+                "source": "training_sample",
+            })
+
+        conn.close()
+        # Ordina per timestamp discendente
+        corrections.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+        return corrections[:limit]
+
+    def update_correction(self, correction_id: int = None, sample_id: int = None, data: dict = None):
+        """Aggiorna una correzione (feedback_log e/o training_sample)."""
+        if not data:
+            return {"status": "error", "message": "Nessun dato da aggiornare"}
+
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        updated = 0
+
+        new_corrected = data.get("corrected")
+        new_field = data.get("field")
+        new_snippet = data.get("snippet")
+
+        # Aggiorna feedback_log
+        if correction_id:
+            row = c.execute("SELECT field, corrected FROM feedback_log WHERE id=?", (correction_id,)).fetchone()
+            if row:
+                old_field, old_corrected = row
+                if new_corrected:
+                    c.execute("UPDATE feedback_log SET corrected=? WHERE id=?", (new_corrected, correction_id))
+                    updated += 1
+                if new_field:
+                    c.execute("UPDATE feedback_log SET field=? WHERE id=?", (new_field, correction_id))
+
+        # Aggiorna training_sample
+        if sample_id:
+            if new_corrected:
+                c.execute("UPDATE training_samples SET correct_value=? WHERE id=?", (new_corrected, sample_id))
+                updated += 1
+            if new_snippet:
+                c.execute("UPDATE training_samples SET text_snippet=? WHERE id=?", (new_snippet[:2000], sample_id))
+            if new_field:
+                c.execute("UPDATE training_samples SET field=? WHERE id=?", (new_field, sample_id))
+
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "updated": updated}
+
+    def delete_correction(self, correction_id: int = None, sample_id: int = None):
+        """Elimina una correzione e il relativo training sample."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        deleted = 0
+
+        if correction_id:
+            # Trova e elimina anche il sample legato
+            row = c.execute("SELECT field, corrected, original FROM feedback_log WHERE id=?", (correction_id,)).fetchone()
+            if row:
+                field, corrected, original = row
+                c.execute("DELETE FROM feedback_log WHERE id=?", (correction_id,))
+                # Elimina sample collegato
+                c.execute(
+                    "DELETE FROM training_samples WHERE field=? AND correct_value=? AND (wrong_value=? OR wrong_value IS NULL)",
+                    (field, corrected, original)
+                )
+                deleted += 1
+
+        if sample_id:
+            c.execute("DELETE FROM training_samples WHERE id=?", (sample_id,))
+            deleted += 1
+
+        conn.commit()
+        conn.close()
+        return {"status": "ok", "deleted": deleted}
+
+    def get_corrections_stats(self):
+        """Statistiche sulle correzioni raggruppate per campo."""
+        conn = sqlite3.connect(DB_PATH)
+        c = conn.cursor()
+        stats = c.execute("""
+            SELECT field, COUNT(*) as cnt
+            FROM feedback_log
+            GROUP BY field
+            ORDER BY cnt DESC
+        """).fetchall()
+        total = c.execute("SELECT COUNT(*) FROM feedback_log").fetchone()[0]
+        samples_total = c.execute("SELECT COUNT(*) FROM training_samples").fetchone()[0]
+        conn.close()
+        return {
+            "total_corrections": total,
+            "total_samples": samples_total,
+            "by_field": {s[0]: s[1] for s in stats},
+        }
 
 
 extractor = AppaltoExtractor()

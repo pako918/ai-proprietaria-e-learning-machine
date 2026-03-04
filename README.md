@@ -1,7 +1,7 @@
-# AppaltoAI — Learning Machine per Gare d'Appalto
+# AppaltoAI — Pipeline 9 Fasi per Gare d'Appalto
 
 Sistema AI **proprietario** per l'estrazione automatica di dati da PDF di gare d'appalto italiane.
-Nessuna API esterna. Tutto gira sul tuo server.
+Nessuna API esterna. Tutto gira sul tuo server. Training **solo supervisionato**, mai automatico.
 
 ---
 
@@ -9,37 +9,37 @@ Nessuna API esterna. Tutto gira sul tuo server.
 
 ```
 appalto-ai/
-├── backend/
-│   ├── ai_engine.py      ← Motore AI ibrido (regole + ML)
-│   └── server.py         ← API REST (FastAPI o HTTP built-in)
-├── frontend/
-│   └── index.html        ← Interfaccia web completa
+├── pipeline.py           ← Orchestratore 9 fasi (self-contained)
+├── field_registry.py     ← Registro campi (single source of truth)
+├── server.py             ← API REST (FastAPI)
+├── ai_engine.py          ← Motore legacy (mantenuto per compatibilità)
+├── pdf_parser.py         ← Parser PDF (PyMuPDF + pdfplumber)
+├── schemas.py            ← Validazione Pydantic + coerenza
+├── index.html            ← Frontend completo (4 tab: Analizza, Storico, Training, Admin)
 ├── data/
-│   ├── learning.db       ← Database SQLite (storico + training)
-│   └── uploads/          ← PDF caricati
-├── models/               ← Modelli ML salvati (.pkl)
-└── start.sh              ← Script di avvio
+│   └── learning.db       ← SQLite (documenti, training samples, model versions)
+├── models/               ← Modelli ML versionati (.pkl)
+└── Dockerfile            ← Container Docker
 ```
 
-### Come funziona l'AI
+### Come funziona la Pipeline
 
 ```
-PDF ──► Estrazione Testo ──► REGOLE (regex pattern)
-                                    │
-                                    ▼
-                         Campi non trovati dalle regole?
-                                    │
-                                    ▼
-                            MODELLI ML (TF-IDF + SGD)
-                            (attivi dopo 10+ correzioni)
-                                    │
-                                    ▼
-                         Risultato con Confidence Score
-                                    │
-                                    ▼
-                    Utente corregge ──► Online Learning
-                    (automatico dopo ogni 5 correzioni)
+Fase 1: Upload + Hash Dedup
+Fase 2: Parsing deterministico (solo regole regex, NO AI)
+Fase 3: NLP specializzato (classificazione + entity recognition)
+Fase 4: Costruzione JSON (merge regole + NLP — responsabilità del CODICE)
+Fase 5: Validazione automatica (schema, somme, coerenza Pydantic)
+Fase 6: Output strutturato + salvataggio
+Fase 7: Correzioni utente → dataset annotato proprietario
+Fase 8: Retraining controllato (SOLO supervisionato, admin-triggered)
+Fase 9: Versionamento modelli (v1, v2, v3 con rollback)
 ```
+
+**Principi chiave:**
+- Il modello NON scrive testo. Riconosce entità, classifica, struttura.
+- Il JSON è responsabilità del CODICE, non del modello.
+- Mai training automatico. Sempre supervisionato dall'admin.
 
 ---
 

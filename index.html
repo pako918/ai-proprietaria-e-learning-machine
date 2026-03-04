@@ -39,7 +39,7 @@
   .history-item:hover { background: rgba(255,255,255,.06); border-color: rgba(255,255,255,.1); }
   .history-item-name { font-size: 0.78rem; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .history-item-meta { font-family: var(--font-m); font-size: 0.65rem; color: #666; }
-  .content { flex: 1; padding: 2rem; max-width: 1050px; margin: 0 auto; width: 100%; }
+  .content { flex: 1; padding: 2rem; max-width: 1100px; margin: 0 auto; width: 100%; }
   .page { display: none; } .page.active { display: block; }
 
   /* Upload */
@@ -57,8 +57,8 @@
   .processing-overlay.visible { display: flex; }
   .spinner { width: 48px; height: 48px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .processing-steps { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 340px; }
-  .proc-step { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: var(--ink-soft); padding: 6px 12px; border-radius: 6px; background: white; border: 1px solid var(--border); opacity: 0.4; transition: opacity .3s; }
+  .processing-steps { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 400px; }
+  .proc-step { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: var(--ink-soft); padding: 6px 12px; border-radius: 6px; background: white; border: 1px solid var(--border); opacity: 0.4; transition: opacity .3s; }
   .proc-step.done { opacity: 1; color: var(--ok); border-color: #c8f0dc; background: #f0fff8; }
   .proc-step.active { opacity: 1; color: var(--accent); border-color: #fdd5c8; background: #fff5f2; }
 
@@ -76,6 +76,9 @@
   .btn.primary { background: var(--accent); color: white; border-color: var(--accent); }
   .btn.primary:hover { background: #a8340f; }
   .btn.success { background: var(--ok); color: white; border-color: var(--ok); }
+  .btn.danger { background: #d32f2f; color: white; border-color: #d32f2f; }
+  .btn.danger:hover { background: #b71c1c; }
+  .btn:disabled { opacity: .5; cursor: default; }
 
   /* Sezioni risultato */
   .result-section { margin-bottom: 1.5rem; }
@@ -111,7 +114,6 @@
   .card-act { background: none; border: 1px solid transparent; cursor: pointer; font-size: 0.7rem; color: #bbb; padding: 2px 5px; border-radius: 4px; transition: all .15s; opacity: 0; }
   .result-card:hover .card-act { opacity: 1; }
   .card-act:hover { background: var(--paper2); border-color: var(--border); color: var(--ink); }
-  .card-act.active { opacity: 1; background: var(--paper2); color: var(--accent); border-color: var(--accent); }
 
   /* Snippet viewer */
   .snippet-panel { display: none; margin-top: 6px; padding: 10px; background: #fafaf8; border: 1px solid var(--border); border-radius: 6px; font-size: 0.76rem; line-height: 1.6; color: var(--ink-soft); max-height: 180px; overflow-y: auto; font-family: var(--font-m); word-break: break-word; }
@@ -141,21 +143,6 @@
   .lotti-table td, .criteri-table td { padding: 5px 8px; border-bottom: 1px solid #eee; color: var(--ink); }
   .criteri-pts { font-family: var(--font-m); font-weight: 600; color: var(--accent); }
 
-  /* Quarantine */
-  .q-card { background: white; border: 1px solid var(--border); border-radius: var(--r); padding: 1rem; margin-bottom: 0.6rem; display: flex; gap: 1rem; align-items: flex-start; transition: border-color .2s; }
-  .q-card:hover { border-color: var(--accent2); }
-  .q-info { flex: 1; min-width: 0; }
-  .q-field { font-family: var(--font-m); font-size: 0.68rem; color: var(--blue); text-transform: uppercase; letter-spacing: .08em; }
-  .q-value { font-weight: 500; margin: 4px 0; font-size: 0.92rem; }
-  .q-conf { font-family: var(--font-m); font-size: 0.72rem; display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; }
-  .q-conf.mid { background: #fff8e8; color: #a07000; }
-  .q-snippet { font-size: 0.74rem; color: var(--ink-soft); font-family: var(--font-m); max-height: 60px; overflow-y: auto; padding: 6px; background: #fafaf8; border-radius: 4px; margin-top: 4px; line-height: 1.5; }
-  .q-actions { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
-  .q-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); cursor: pointer; font-size: 0.78rem; font-family: var(--font-b); font-weight: 500; transition: all .2s; }
-  .q-btn.approve { background: var(--ok); color: white; border-color: var(--ok); }
-  .q-btn.approve:hover { background: #15693e; }
-  .q-btn.reject { background: white; color: var(--accent); }
-  .q-btn.reject:hover { background: #ffeee8; border-color: var(--accent); }
   /* Coherence panel */
   .coherence-banner { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
   .coherence-title { font-family: var(--font-m); font-size: 0.68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 8px; }
@@ -175,13 +162,8 @@
   .parsed-table tr:nth-child(even) { background: #fafaf8; }
   .validation-warnings { display: flex; flex-direction: column; gap: 4px; margin-top: 0.6rem; }
   .vwarn { font-size: 0.8rem; color: var(--gold); padding: 4px 8px; background: #fffde8; border-radius: 4px; border-left: 3px solid var(--gold); }
-  .safe-learn-banner { background: linear-gradient(135deg, #e8f5e9 0%, #f1f8e9 100%); border: 1px solid #c8e6c9; border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; display: flex; gap: 12px; align-items: flex-start; }
-  .safe-learn-stat { display: flex; flex-direction: column; align-items: center; padding: 0 1rem; border-right: 1px solid #c8e6c9; }
-  .safe-learn-stat:last-child { border-right: none; }
-  .safe-learn-num { font-family: var(--font-h); font-size: 1.6rem; color: var(--ok); }
-  .safe-learn-label { font-size: 0.68rem; color: var(--ink-soft); text-transform: uppercase; font-family: var(--font-m); letter-spacing: .06em; }
 
-  /* Learning section */
+  /* Learning section (bottom of results) */
   .learn-section { background: linear-gradient(135deg, #0d1117, #1a2230); border-radius: 12px; padding: 1.5rem; color: white; margin-top: 1.5rem; border: 1px solid rgba(255,255,255,.08); }
   .learn-title { font-family: var(--font-h); font-size: 1.1rem; margin-bottom: 1rem; display: flex; align-items: center; gap: 8px; }
   .learn-field-row { display: flex; align-items: center; gap: 12px; font-size: 0.78rem; margin-bottom: 6px; }
@@ -191,7 +173,7 @@
   .learn-bar-fill.ready { background: var(--ok); }
   .learn-count { color: #888; font-family: var(--font-m); font-size: 0.68rem; width: 80px; text-align: right; }
 
-  /* Training page */
+  /* Training / Admin page */
   .training-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
   .training-card { background: white; border: 1px solid var(--border); border-radius: var(--r); padding: 1.2rem; }
   .training-card h3 { font-family: var(--font-h); font-size: 1rem; margin-bottom: 0.8rem; }
@@ -201,6 +183,29 @@
   .form-control { border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-family: var(--font-b); font-size: 0.88rem; color: var(--ink); outline: none; width: 100%; }
   .form-control:focus { border-color: var(--accent); }
   .form-textarea { min-height: 80px; resize: vertical; }
+
+  /* Admin Table */
+  .admin-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+  .admin-table th { text-align: left; font-family: var(--font-m); font-size: 0.65rem; color: var(--ink-soft); padding: 8px; border-bottom: 2px solid var(--border); text-transform: uppercase; letter-spacing: 0.08em; position: sticky; top: 0; background: white; }
+  .admin-table td { padding: 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .admin-table tr:hover { background: #fafaf8; }
+  .admin-table-wrap { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--r); }
+  .admin-empty { padding: 2rem; text-align: center; color: var(--ink-soft); font-size: 0.9rem; }
+  .badge-sm { font-size: 0.6rem; padding: 2px 6px; border-radius: 3px; font-family: var(--font-m); font-weight: 500; display: inline-block; }
+  .badge-sm.active { background: #e8f5e9; color: #2e7d32; }
+  .badge-sm.inactive { background: #fafafa; color: #999; }
+
+  /* Version card */
+  .version-card { background: white; border: 1px solid var(--border); border-radius: var(--r); padding: 1rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; transition: border-color .2s; }
+  .version-card:hover { border-color: var(--accent2); }
+  .version-card.is-active { border-left: 3px solid var(--ok); }
+
+  /* Tabs within admin */
+  .admin-tabs { display: flex; gap: 2px; margin-bottom: 1.2rem; border-bottom: 2px solid var(--border); }
+  .admin-tab { padding: 8px 16px; cursor: pointer; font-size: 0.82rem; font-family: var(--font-b); color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all .2s; }
+  .admin-tab:hover { color: var(--ink); }
+  .admin-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+  .admin-panel { display: none; } .admin-panel.active { display: block; }
 
   /* Toast */
   .toast-container { position: fixed; bottom: 2rem; right: 2rem; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
@@ -216,27 +221,28 @@
 <body>
 
 <header>
-  <div class="logo"><span>AppaltoAI</span><span class="logo-badge">ML v2</span></div>
+  <div class="logo"><span>AppaltoAI</span><span class="logo-badge">Pipeline v2</span></div>
   <nav class="header-nav">
     <button class="nav-btn active" onclick="showPage('analyze', this)">📄 Analizza</button>
     <button class="nav-btn" onclick="showPage('history', this)">🗂 Storico</button>
-    <button class="nav-btn" onclick="showPage('training', this)">🧠 Apprendimento</button>
+    <button class="nav-btn" onclick="showPage('training', this)">🧠 Training</button>
+    <button class="nav-btn" onclick="showPage('admin', this)">⚙️ Admin</button>
   </nav>
 </header>
 
 <div class="main">
 <aside class="sidebar">
   <div>
-    <div class="sidebar-section-title">Statistiche AI</div>
+    <div class="sidebar-section-title">Statistiche</div>
     <div style="display:flex;flex-direction:column;gap:8px">
       <div class="stat-card"><div class="stat-value" id="stat-docs">0</div><div class="stat-label">PDF analizzati</div></div>
-      <div class="stat-card"><div class="stat-value" id="stat-corrections">0</div><div class="stat-label">Correzioni apprese</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-corrections">0</div><div class="stat-label">Correzioni nel dataset</div></div>
     </div>
   </div>
   <div>
-    <div class="sidebar-section-title">Modelli ML Attivi</div>
+    <div class="sidebar-section-title">Modelli ML</div>
     <div style="display:flex;flex-direction:column;gap:4px" id="models-list">
-      <div class="model-badge"><div class="model-dot"></div>Nessun modello</div>
+      <div class="model-badge"><div class="model-dot"></div>Solo regole</div>
     </div>
   </div>
   <div style="flex:1">
@@ -246,13 +252,13 @@
     </div>
   </div>
   <div style="font-size:0.7rem;color:#444;padding-top:1rem;border-top:1px solid rgba(255,255,255,.06)">
-    �️ <strong>Safe Auto-Learning</strong>: impara solo da dati validati. Dati dubbi → quarantena.
+    🔒 <strong>Training supervisionato</strong>: il modello impara solo quando l'admin lo attiva. Mai automatico.
   </div>
 </aside>
 
 <div class="content">
 
-  <!-- PAGE: ANALIZZA -->
+  <!-- ═══════ PAGE: ANALIZZA ═══════ -->
   <div class="page active" id="page-analyze">
     <div id="upload-section">
       <div class="upload-area" id="upload-area" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event)">
@@ -277,13 +283,14 @@
 
     <div class="processing-overlay" id="processing-overlay">
       <div class="spinner"></div>
-      <div style="font-family:var(--font-h);font-size:1.2rem;color:var(--ink)">Analisi in corso...</div>
+      <div style="font-family:var(--font-h);font-size:1.2rem;color:var(--ink)">Pipeline 9 Fasi in corso...</div>
       <div class="processing-steps">
-        <div class="proc-step" id="step-1"><span>📂</span> Parsing strutturato PDF (PyMuPDF)</div>
-        <div class="proc-step" id="step-2"><span>📊</span> Estrazione tabelle + Markdown</div>
-        <div class="proc-step" id="step-3"><span>🔍</span> Pattern regex + ML fallback</div>
-        <div class="proc-step" id="step-4"><span>📍</span> Page sourcing + snippet</div>
-        <div class="proc-step" id="step-5"><span>✅</span> Validazione coerenza</div>
+        <div class="proc-step" id="step-1"><span>1️⃣</span> Upload + Hash dedup</div>
+        <div class="proc-step" id="step-2"><span>2️⃣</span> Parsing deterministico (regole)</div>
+        <div class="proc-step" id="step-3"><span>3️⃣</span> NLP classificazione entita</div>
+        <div class="proc-step" id="step-4"><span>4️⃣</span> Costruzione JSON + merge</div>
+        <div class="proc-step" id="step-5"><span>5️⃣</span> Validazione coerenza</div>
+        <div class="proc-step" id="step-6"><span>6️⃣</span> Salvataggio strutturato</div>
       </div>
     </div>
 
@@ -310,61 +317,29 @@
       <div id="coherence-container"></div>
       <div id="tables-container" style="display:none"></div>
       <div id="results-container"></div>
-      <div id="notes-section" style="display:none;margin-top:1.2rem">
-        <div style="font-family:var(--font-m);font-size:0.65rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:0.5rem">⚠ Aspetti da verificare</div>
-        <div id="notes-list" style="display:flex;flex-direction:column;gap:6px"></div>
-      </div>
       <div class="learn-section" id="learn-section">
-        <div class="learn-title">🧠 Stato Apprendimento</div>
+        <div class="learn-title">🧠 Stato Dataset</div>
         <div id="learn-progress"></div>
         <div style="margin-top:1rem;font-size:0.76rem;color:#888;line-height:1.5">
-          🛡️ <strong>Safe Auto-Learning</strong>: dati con confidenza ≥85% entrano automaticamente nel training.
-          Quelli con confidenza 50-85% vanno in <strong>quarantena</strong> (tab Apprendimento).
-          Se un modello peggiora, scatta il <strong>rollback automatico</strong>.
-          Clicca <strong>✏️</strong> per correggere manualmente un campo.
+          🔒 <strong>Training supervisionato</strong>: le correzioni entrano nel dataset proprietario.
+          L'admin attiva il training dalla pagina <strong>⚙️ Admin</strong>.
+          Clicca <strong>✏️</strong> per correggere un campo.
         </div>
       </div>
     </div>
   </div>
 
-  <!-- PAGE: STORICO -->
+  <!-- ═══════ PAGE: STORICO ═══════ -->
   <div class="page" id="page-history">
     <h2 style="font-family:var(--font-h);font-size:1.6rem;margin-bottom:0.5rem">Storico Analisi</h2>
     <p style="color:var(--ink-soft);font-size:0.9rem;margin-bottom:1.5rem">Tutti i PDF analizzati</p>
     <div id="history-list"><div style="color:var(--ink-soft);font-size:0.9rem">Nessun documento.</div></div>
   </div>
 
-  <!-- PAGE: TRAINING -->
+  <!-- ═══════ PAGE: TRAINING ═══════ -->
   <div class="page" id="page-training">
-    <h2 style="font-family:var(--font-h);font-size:1.6rem;margin-bottom:0.5rem">Centro Apprendimento AI</h2>
-    <p style="color:var(--ink-soft);font-size:0.9rem;margin-bottom:1rem">Insegna all'AI dove trovare i dati, avvia il training e monitora i modelli</p>
-
-    <!-- Safe Auto-Learn Banner -->
-    <div class="safe-learn-banner" id="safe-learn-banner">
-      <div style="font-size:1.6rem;line-height:1">🛡️</div>
-      <div style="flex:1">
-        <div style="font-weight:600;font-size:0.9rem;margin-bottom:4px">Safe Auto-Learning Attivo</div>
-        <div style="font-size:0.82rem;color:var(--ink-soft);line-height:1.5">
-          L'AI impara automaticamente dai PDF analizzati, ma <strong>solo</strong> da dati validati con confidenza ≥ 85%.
-          I dati dubbi (50-85%) vanno in <strong>quarantena</strong> per la tua revisione. Se un modello peggiora, scatta il <strong>rollback</strong> automatico.
-        </div>
-        <div style="display:flex;gap:0;margin-top:10px" id="safe-learn-stats">
-          <div class="safe-learn-stat"><div class="safe-learn-num" id="sl-auto">0</div><div class="safe-learn-label">Auto-learned</div></div>
-          <div class="safe-learn-stat"><div class="safe-learn-num" style="color:var(--gold)" id="sl-quarantine">0</div><div class="safe-learn-label">In quarantena</div></div>
-          <div class="safe-learn-stat"><div class="safe-learn-num" style="color:var(--ink-soft)" id="sl-skipped">0</div><div class="safe-learn-label">Scartati</div></div>
-          <div class="safe-learn-stat"><div class="safe-learn-num" style="color:var(--accent)" id="sl-rollbacks">0</div><div class="safe-learn-label">Rollback</div></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Quarantine Review -->
-    <div class="training-card" style="margin-bottom:1rem;border: 2px solid var(--gold);background:#fffdf5" id="quarantine-section">
-      <h3 style="display:flex;align-items:center;gap:8px">⚠️ Quarantena <span id="q-badge" style="background:var(--gold);color:white;font-size:0.65rem;padding:2px 8px;border-radius:10px;font-family:var(--font-m)">0</span></h3>
-      <p style="font-size:0.85rem;color:var(--ink-soft);margin-bottom:0.8rem">
-        Dati estratti automaticamente con confidenza media. Approva quelli corretti per migliorare l'AI, rifiuta gli errori.
-      </p>
-      <div id="quarantine-list"><div style="color:var(--ink-soft);font-size:0.85rem">Nessun campione in attesa.</div></div>
-    </div>
+    <h2 style="font-family:var(--font-h);font-size:1.6rem;margin-bottom:0.5rem">Dataset & Training</h2>
+    <p style="color:var(--ink-soft);font-size:0.9rem;margin-bottom:1rem">Aggiungi campioni al dataset proprietario per addestrare l'AI</p>
 
     <div class="training-grid">
       <div class="training-card" style="grid-column:1/-1">
@@ -382,11 +357,114 @@
         <div id="models-status" style="display:flex;flex-direction:column;gap:8px;font-size:0.85rem"><div style="color:var(--ink-soft)">Caricamento...</div></div>
       </div>
       <div class="training-card">
-        <h3>🚀 Training Manuale</h3>
-        <p>Forza il riadddestramento di un modello.</p>
+        <h3>🚀 Training Supervisionato</h3>
+        <p>Riadddestra un modello con i campioni nel dataset. Solo l'admin lo attiva.</p>
         <div class="form-row"><select class="form-control" id="retrain-field"></select></div>
         <button class="btn primary" onclick="retrainModel()">🧠 Avvia Training</button>
         <div id="train-result" style="margin-top:0.8rem;font-size:0.82rem;color:var(--ink-soft)"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ PAGE: ADMIN ═══════ -->
+  <div class="page" id="page-admin">
+    <h2 style="font-family:var(--font-h);font-size:1.6rem;margin-bottom:0.5rem">Pannello Admin</h2>
+    <p style="color:var(--ink-soft);font-size:0.9rem;margin-bottom:1rem">Gestisci correzioni, campi custom, modelli e versioni</p>
+
+    <div class="admin-tabs">
+      <div class="admin-tab active" onclick="showAdminTab('corrections', this)">📝 Correzioni</div>
+      <div class="admin-tab" onclick="showAdminTab('custom-fields', this)">🔧 Campi Custom</div>
+      <div class="admin-tab" onclick="showAdminTab('model-versions', this)">🏷️ Versioni Modelli</div>
+      <div class="admin-tab" onclick="showAdminTab('pipeline-info', this)">ℹ️ Pipeline</div>
+    </div>
+
+    <!-- Admin: Correzioni -->
+    <div class="admin-panel active" id="admin-corrections">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div style="font-size:0.85rem;color:var(--ink-soft)" id="corrections-count">0 correzioni nel dataset</div>
+        <button class="btn" onclick="loadAdminCorrections()">🔄 Aggiorna</button>
+      </div>
+      <div class="admin-table-wrap">
+        <table class="admin-table">
+          <thead><tr><th>Campo</th><th>Originale</th><th>Corretto</th><th>Data</th><th>Azioni</th></tr></thead>
+          <tbody id="corrections-tbody"><tr><td colspan="5" class="admin-empty">Caricamento...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Admin: Campi Custom -->
+    <div class="admin-panel" id="admin-custom-fields">
+      <div class="training-card" style="margin-bottom:1rem">
+        <h3>➕ Aggiungi Campo Custom</h3>
+        <p>Aggiungi un nuovo campo al registro. Sarà estratto automaticamente dai prossimi PDF.</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-row"><label class="form-label">Chiave (snake_case)</label><input class="form-control" id="cf-key" placeholder="es: codice_fiscale_rup"/></div>
+          <div class="form-row"><label class="form-label">Etichetta</label><input class="form-control" id="cf-label" placeholder="es: Codice Fiscale RUP"/></div>
+          <div class="form-row"><label class="form-label">Categoria</label>
+            <select class="form-control" id="cf-category">
+              <option value="Identificativi">Identificativi</option>
+              <option value="Soggetti">Soggetti</option>
+              <option value="Oggetto e Procedura">Oggetto e Procedura</option>
+              <option value="Importi">Importi</option>
+              <option value="Punteggi OEPV">Punteggi OEPV</option>
+              <option value="Scadenze e Durata">Scadenze e Durata</option>
+              <option value="Requisiti e Categorie">Requisiti e Categorie</option>
+              <option value="Condizioni e Clausole">Condizioni e Clausole</option>
+            </select>
+          </div>
+          <div class="form-row"><label class="form-label">Tipo</label>
+            <select class="form-control" id="cf-type">
+              <option value="text">Testo</option>
+              <option value="money">Importo</option>
+              <option value="number">Numero</option>
+              <option value="boolean">Booleano</option>
+            </select>
+          </div>
+          <div class="form-row" style="grid-column:1/-1"><label class="form-label">Pattern regex (uno per riga)</label><textarea class="form-control form-textarea" id="cf-patterns" placeholder="(?:codice\s+fiscale)[:\s]*([A-Z0-9]{16})"></textarea></div>
+        </div>
+        <button class="btn success" onclick="addCustomField()">➕ Aggiungi Campo</button>
+      </div>
+      <div style="font-family:var(--font-m);font-size:0.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:0.6rem">Campi custom registrati</div>
+      <div id="custom-fields-list"><div style="color:var(--ink-soft);font-size:0.85rem">Nessun campo custom.</div></div>
+    </div>
+
+    <!-- Admin: Model Versions -->
+    <div class="admin-panel" id="admin-model-versions">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+        <div style="font-size:0.85rem;color:var(--ink-soft)">Cronologia versioni modelli ML</div>
+        <button class="btn" onclick="loadModelVersions()">🔄 Aggiorna</button>
+      </div>
+      <div id="model-versions-list" style="display:flex;flex-direction:column;gap:8px">
+        <div style="color:var(--ink-soft);font-size:0.85rem">Caricamento...</div>
+      </div>
+    </div>
+
+    <!-- Admin: Pipeline Info -->
+    <div class="admin-panel" id="admin-pipeline-info">
+      <div class="training-card">
+        <h3>ℹ️ Architettura Pipeline</h3>
+        <div style="font-size:0.85rem;line-height:1.8;color:var(--ink-soft)">
+          <div><strong>Versione:</strong> 2.0.0 — Pipeline 9 Fasi Supervisionata</div>
+          <div><strong>Training:</strong> Solo supervisionato (admin-triggered), MAI automatico</div>
+          <div><strong>Estrazione:</strong> Regole deterministiche + NLP classificazione</div>
+          <div><strong>JSON:</strong> Costruito dal codice, MAI dal modello</div>
+          <hr style="border:none;border-top:1px solid var(--border);margin:1rem 0">
+          <div style="font-family:var(--font-m);font-size:0.72rem;line-height:2">
+            <div>Fase 1: Upload + Hash deduplicazione</div>
+            <div>Fase 2: Parsing deterministico (solo regex, no AI)</div>
+            <div>Fase 3: NLP specializzato (classificazione + entity recognition)</div>
+            <div>Fase 4: Costruzione JSON finale (merge regole + NLP)</div>
+            <div>Fase 5: Validazione automatica (schema, somme, coerenza)</div>
+            <div>Fase 6: Output strutturato + salvataggio</div>
+            <div>Fase 7: Correzioni &rarr; dataset annotato proprietario</div>
+            <div>Fase 8: Retraining controllato (supervisionato)</div>
+            <div>Fase 9: Versionamento modelli (v1, v2, v3 + rollback)</div>
+          </div>
+        </div>
+      </div>
+      <div class="training-card" style="margin-top:1rem">
+        <h3>📊 Stato Pipeline</h3>
+        <div id="pipeline-status-info" style="font-size:0.85rem;color:var(--ink-soft)">Caricamento...</div>
       </div>
     </div>
   </div>
@@ -405,7 +483,7 @@ let currentPageSources = {};
 let currentTablesJson = [];
 
 // ═══════════════════════════════════════════════════════════════
-// CONFIGURAZIONE CAMPI — mappati sull'output reale dell'AI
+// CONFIGURAZIONE CAMPI
 // ═══════════════════════════════════════════════════════════════
 const SECTIONS = [
   { title: "Identificativi", icon: "🔑", fields: [
@@ -413,12 +491,15 @@ const SECTIONS = [
     { key: 'cup', label: 'CUP', icon: '📌', mono: true },
     { key: 'cpv', label: 'Codice CPV', icon: '🗂', mono: true },
     { key: 'nuts_code', label: 'Codice NUTS', icon: '🌍', mono: true },
+    { key: 'codice_progetto', label: 'Codice Progetto', icon: '🏷', mono: true },
   ]},
   { title: "Soggetti", icon: "🏛", fields: [
     { key: 'stazione_appaltante', label: 'Stazione Appaltante', icon: '🏛', highlight: true },
     { key: 'amministrazione_delegante', label: 'Amm. Delegante', icon: '🏢' },
     { key: 'rup', label: 'RUP', icon: '👤' },
     { key: 'responsabile_procedimento', label: 'Resp. Procedimento', icon: '👤' },
+    { key: 'direttore_esecuzione', label: 'Direttore Esecuzione', icon: '👤' },
+    { key: 'coordinatore_sicurezza', label: 'Coord. Sicurezza', icon: '👤' },
   ]},
   { title: "Oggetto e Procedura", icon: "📋", fields: [
     { key: 'oggetto_appalto', label: 'Oggetto Appalto', icon: '📋', highlight: true, fullWidth: true },
@@ -430,10 +511,13 @@ const SECTIONS = [
   { title: "Importi", icon: "💶", fields: [
     { key: 'importo_totale', label: 'Importo Totale', icon: '💶', money: true },
     { key: 'importo_base_gara', label: 'Base di Gara', icon: '💰', money: true },
+    { key: 'oneri_sicurezza', label: 'Oneri Sicurezza', icon: '🛡', money: true },
+    { key: 'costi_manodopera', label: 'Costi Manodopera', icon: '👷', money: true },
     { key: 'garanzia_provvisoria', label: 'Garanzia Provvisoria', icon: '🔒', money: true },
     { key: 'garanzia_definitiva', label: 'Garanzia Definitiva', icon: '🔒' },
     { key: 'contributo_anac', label: 'Contributo ANAC', icon: '🏦', money: true },
     { key: 'imposta_bollo', label: 'Imposta di Bollo', icon: '📄', money: true },
+    { key: 'anticipazione', label: 'Anticipazione', icon: '💸' },
   ]},
   { title: "Punteggi OEPV", icon: "⭐", fields: [
     { key: 'punteggio_tecnica', label: 'Punti Tecnica', icon: '⭐' },
@@ -444,23 +528,32 @@ const SECTIONS = [
     { key: 'pti_parita_genere', label: 'Bonus Parità Genere', icon: '⚖️' },
   ]},
   { title: "Scadenze e Durata", icon: "📅", fields: [
+    { key: 'scadenza_offerte', label: 'Scadenza Offerte', icon: '📅' },
     { key: 'termine_chiarimenti', label: 'Termine Chiarimenti', icon: '❓' },
     { key: 'durata_contratto', label: 'Durata Contratto', icon: '⏱' },
+    { key: 'termine_esecuzione', label: 'Termine Esecuzione', icon: '🏁' },
     { key: 'piattaforma_url', label: 'Piattaforma', icon: '🌐', fullWidth: true },
   ]},
   { title: "Requisiti e Categorie", icon: "📊", fields: [
     { key: 'fatturato_minimo', label: 'Fatturato Minimo', icon: '📈', money: true },
     { key: 'periodo_requisiti_anni', label: 'Periodo Requisiti', icon: '📅' },
+    { key: 'polizza_professionale', label: 'Polizza Professionale', icon: '🔐' },
+    { key: 'requisiti_soa', label: 'Requisiti SOA', icon: '🏗' },
     { key: 'categorie_ingegneria', label: 'Categorie Ingegneria', icon: '🏗', isList: true },
   ]},
   { title: "Condizioni e Clausole", icon: "📝", fields: [
     { key: 'subappalto', label: 'Subappalto', icon: '🔗', fullWidth: true },
     { key: 'avvalimento', label: 'Avvalimento', icon: '🤝', fullWidth: true },
+    { key: 'penali', label: 'Penali', icon: '⚠️', fullWidth: true },
+    { key: 'modalita_pagamento', label: 'Modalità Pagamento', icon: '💳', fullWidth: true },
     { key: 'verifica_anomalia', label: 'Verifica Anomalia', icon: '📉', fullWidth: true },
     { key: 'finanziamento', label: 'Fonte Finanziamento', icon: '🇪🇺' },
     { key: 'revisione_prezzi', label: 'Revisione Prezzi', icon: '📊', boolean: true },
     { key: 'conformita_cam', label: 'Conformità CAM', icon: '🌿', boolean: true },
     { key: 'inversione_procedimentale', label: 'Inversione Proc.', icon: '🔄', boolean: true },
+    { key: 'soccorso_istruttorio', label: 'Soccorso Istruttorio', icon: '📋', boolean: true },
+    { key: 'clausola_sociale', label: 'Clausola Sociale', icon: '🤝', boolean: true },
+    { key: 'sopralluogo_obbligatorio', label: 'Sopralluogo Obbl.', icon: '🚶', boolean: true },
   ]},
 ];
 
@@ -471,7 +564,7 @@ SECTIONS.forEach(s => s.fields.forEach(f => FIELD_MAP[f.key] = f));
 function populateFieldSelects() {
   ['train-field','retrain-field'].forEach(id => {
     const el = document.getElementById(id);
-    if(el) el.innerHTML = ALL_FIELDS.map(k => `<option value="${k}">${FIELD_MAP[k].icon} ${FIELD_MAP[k].label}</option>`).join('');
+    if(el) el.innerHTML = ALL_FIELDS.map(k => `<option value="${k}">${FIELD_MAP[k]?.icon||''} ${FIELD_MAP[k]?.label||k}</option>`).join('');
   });
 }
 
@@ -485,6 +578,14 @@ function showPage(name, btn) {
   if(btn) btn.classList.add('active');
   if (name === 'history') loadHistory();
   if (name === 'training') loadTrainingStats();
+  if (name === 'admin') { loadAdminCorrections(); loadCustomFields(); loadModelVersions(); loadPipelineStatus(); }
+}
+
+function showAdminTab(name, tab) {
+  document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`admin-${name}`).classList.add('active');
+  tab.classList.add('active');
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -515,19 +616,19 @@ async function processFile(file) {
     const res = await fetch(`${API}/api/extract`, {method:'POST', body:fd});
     if(!res.ok){ const e=await res.json(); throw new Error(e.detail||'Errore'); }
     showResults(await res.json(), file.name);
-  } catch(e) { hideProcessing(); showToast('⚠ '+e.message,'error'); }
+  } catch(e) { hideProcessing(); showToast(e.message,'error'); }
 }
 
 function showProcessing() {
   document.getElementById('upload-section').style.display='none';
   document.getElementById('results-section').style.display='none';
   document.getElementById('processing-overlay').classList.add('visible');
-  const steps=['step-1','step-2','step-3','step-4','step-5'];
+  const steps=['step-1','step-2','step-3','step-4','step-5','step-6'];
   steps.forEach((s,i) => {
     setTimeout(() => {
       document.getElementById(s).classList.add('active');
       if(i>0) { document.getElementById(steps[i-1]).classList.remove('active'); document.getElementById(steps[i-1]).classList.add('done'); }
-    }, i*550);
+    }, i*450);
   });
 }
 async function stepProgress(){ return new Promise(r=>setTimeout(r,2800)); }
@@ -564,10 +665,12 @@ function showResults(data, filename) {
   currentTablesJson = data._tables_json || [];
 
   document.getElementById('result-filename').textContent = filename;
-  const ml = data._extraction_method==='hybrid' ? '🔵 Ibrido (Regole+ML)' : '🟢 Regole';
+  const ml = data._extraction_method==='hybrid' ? '🔵 Ibrido (Regole+ML)' : '🟢 Solo Regole';
   const parserInfo = data._parser_used ? ` · 📄 ${data._parser_used}` : '';
   const pagesInfo = data._total_pages ? ` · ${data._total_pages} pag.` : '';
-  document.getElementById('result-meta').textContent = `${ml}${parserInfo}${pagesInfo} · ${new Date(data._timestamp).toLocaleString('it-IT')}`;
+  const cachedInfo = data._pipeline_phase === 'cached' ? ' · ⚡ Cache (hash dedup)' : '';
+  const timeInfo = data._pipeline_time_ms ? ` · ${data._pipeline_time_ms}ms` : '';
+  document.getElementById('result-meta').textContent = `${ml}${parserInfo}${pagesInfo}${cachedInfo}${timeInfo}`;
 
   const conf = data._confidence || 0;
   const fill = document.getElementById('confidence-fill');
@@ -575,7 +678,7 @@ function showResults(data, filename) {
   fill.className = 'confidence-fill '+(conf>=65?'high':conf>=35?'mid':'low');
   document.getElementById('confidence-pct').textContent = conf.toFixed(1)+'%';
 
-  // ── PDF Info Banner ──────────────────────────────────────────────
+  // ── PDF Info Banner ──
   const pdfInfoEl = document.getElementById('pdf-info-container');
   if (data._total_pages) {
     const nativeLabel = data._is_native_pdf ? '✅ Nativo' : '⚠️ Scansionato';
@@ -591,12 +694,11 @@ function showResults(data, filename) {
       <div class="pdf-info-item"><div class="pdf-info-value">${data._parser_used||'?'}</div><div class="pdf-info-label">Parser</div></div>
       <div class="pdf-info-item"><div class="pdf-info-value">${tablesN}</div><div class="pdf-info-label">Tabelle</div></div>
       <div class="pdf-info-item"><div class="pdf-info-value">${chunksN}</div><div class="pdf-info-label">Sezioni</div></div>
-      <div class="pdf-info-item"><div class="pdf-info-value">${Object.keys(currentPageSources).length}</div><div class="pdf-info-label">Campi con pagina</div></div>
       ${warnsHtml}
     </div>`;
   } else { pdfInfoEl.innerHTML = ''; }
 
-  // ── Coherence Validation Panel ───────────────────────────────────
+  // ── Coherence Panel ──
   const cohEl = document.getElementById('coherence-container');
   if (data._coherence) {
     const coh = data._coherence;
@@ -611,7 +713,7 @@ function showResults(data, filename) {
       <div style="display:flex;align-items:center;gap:1.5rem;margin-bottom:0.5rem">
         <div class="coherence-score ${scoreClass}">${(coh.coherence_score*100).toFixed(0)}%</div>
         <div style="font-size:0.82rem;color:var(--ink-soft)">
-          ✅ ${coh.passed} verifiche OK · ⚠️ ${coh.warnings} avvisi · ❌ ${coh.failures} problemi
+          ✅ ${coh.passed} OK · ⚠️ ${coh.warnings} avvisi · ❌ ${coh.failures} problemi
         </div>
       </div>
       <div class="coherence-checks">${checksHtml}</div>
@@ -619,7 +721,7 @@ function showResults(data, filename) {
     </div>`;
   } else { cohEl.innerHTML = ''; }
 
-  // ── Tables container (hidden by default) ─────────────────────────
+  // ── Tables ──
   const tablesEl = document.getElementById('tables-container');
   if (currentTablesJson.length > 0) {
     let tablesHtml = '<div class="tables-section"><div class="section-header">📊 Tabelle estratte dal PDF</div>';
@@ -629,9 +731,7 @@ function showResults(data, filename) {
       (tbl.headers||[]).forEach(h => tablesHtml += `<th>${escapeHtml(h)}</th>`);
       tablesHtml += '</tr></thead><tbody>';
       (tbl.rows||[]).slice(0, 30).forEach(row => {
-        tablesHtml += '<tr>';
-        row.forEach(c => tablesHtml += `<td>${escapeHtml(c)}</td>`);
-        tablesHtml += '</tr>';
+        tablesHtml += '<tr>'; row.forEach(c => tablesHtml += `<td>${escapeHtml(c)}</td>`); tablesHtml += '</tr>';
       });
       tablesHtml += '</tbody></table></div>';
     });
@@ -639,16 +739,14 @@ function showResults(data, filename) {
     tablesEl.innerHTML = tablesHtml;
   } else { tablesEl.innerHTML = ''; }
 
+  // ── Campi ──
   const container = document.getElementById('results-container');
   container.innerHTML = '';
 
-  // Sezioni campi
   SECTIONS.forEach(section => {
-    const sec = document.createElement('div');
-    sec.className = 'result-section';
+    const sec = document.createElement('div'); sec.className = 'result-section';
     sec.innerHTML = `<div class="section-header">${section.icon} ${section.title}</div>`;
-    const grid = document.createElement('div');
-    grid.className = 'result-grid';
+    const grid = document.createElement('div'); grid.className = 'result-grid';
 
     section.fields.forEach(cfg => {
       const val = data[cfg.key];
@@ -676,7 +774,7 @@ function showResults(data, filename) {
       else if(cfg.mono) valHtml=`<div class="result-value mono">${Array.isArray(val)?val.join(', '):val}</div>`;
       else valHtml=`<div class="result-value">${val}</div>`;
 
-      const snippetBtn = snippet ? `<button class="card-act" onclick="toggleSnippet('${cfg.key}')" title="Vedi contesto PDF">📄</button>` : '';
+      const snippetBtn = snippet ? `<button class="card-act" onclick="toggleSnippet('${cfg.key}')" title="Vedi contesto">📄</button>` : '';
       const editBtn = `<button class="card-act" onclick="toggleEdit('${cfg.key}')" title="Correggi">✏️</button>`;
 
       card.innerHTML = `
@@ -742,7 +840,7 @@ function showResults(data, filename) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// SNIPPET VIEWER
+// SNIPPET & EDIT
 // ═══════════════════════════════════════════════════════════════
 function toggleSnippet(field) {
   const p=document.getElementById(`snippet-${field}`);
@@ -764,12 +862,9 @@ function highlightValue(text, value) {
   }
   return html;
 }
-function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escapeRegExp(s){ return s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
 
-// ═══════════════════════════════════════════════════════════════
-// CORREZIONI — con contesto intelligente
-// ═══════════════════════════════════════════════════════════════
 function toggleEdit(field) {
   const p=document.getElementById(`edit-${field}`);
   const open=p.classList.contains('open');
@@ -779,18 +874,16 @@ function toggleEdit(field) {
     const snippet=currentSnippets[field]||'';
     const val=currentResult[field];
     const dv=val!=null?(Array.isArray(val)?val.join(', '):String(val)):'';
-
     let ctx='';
-    if(snippet) ctx=`<div class="edit-hint">📄 Contesto dal PDF — puoi selezionare testo come suggerimento:</div><div class="edit-context" onmouseup="onSnippetSelect('${field}')">${highlightValue(snippet,val)}</div>`;
-    else ctx='<div class="edit-hint">ℹ️ Nessun contesto PDF trovato per questo campo</div>';
-
+    if(snippet) ctx=`<div class="edit-hint">📄 Contesto dal PDF — seleziona testo per usarlo:</div><div class="edit-context" onmouseup="onSnippetSelect('${field}')">${highlightValue(snippet,val)}</div>`;
+    else ctx='<div class="edit-hint">ℹ️ Nessun contesto PDF per questo campo</div>';
     p.innerHTML=`${ctx}
       <div class="edit-row">
         <input class="edit-input" id="ei-${field}" value="${escapeHtml(dv)}" placeholder="Valore corretto..."/>
         <button class="btn-save-edit" onclick="saveEdit('${field}')">✅ Salva</button>
         <button class="btn-cancel-edit" onclick="cancelEdit('${field}')">✖</button>
       </div>
-      <div class="edit-hint" style="margin-top:4px">💡 Questa correzione insegna all'AI dove trovare "${FIELD_MAP[field]?.label||field}" nei PDF</div>`;
+      <div class="edit-hint" style="margin-top:4px">💡 Correzione → dataset proprietario. Training da pannello Admin.</div>`;
     p.classList.add('open');
     setTimeout(()=>document.getElementById(`ei-${field}`)?.focus(),100);
   }
@@ -814,7 +907,6 @@ async function saveEdit(field) {
     const data=await res.json();
     currentResult[field]=corrected;
     currentMethods[field]='corrected';
-    // Update card
     const card=document.querySelector(`.result-card[data-field="${field}"]`);
     if(card){
       const cfg=FIELD_MAP[field]; const ve=card.querySelector('.result-value,.tags-wrap');
@@ -825,10 +917,7 @@ async function saveEdit(field) {
       else if(ba) ba.insertAdjacentHTML('afterbegin','<span class="method-badge corrected">CORRETTO</span>');
     }
     cancelEdit(field);
-    const msg=data.model_retrained
-      ?`🧠 Modello "${FIELD_MAP[field]?.label||field}" riaddestrato! (${data.sample_count} campioni)`
-      :`✅ Correzione salvata (${data.sample_count}/5 per training)`;
-    showToast(msg,'ok');
+    showToast(`✅ Correzione salvata (${data.sample_count||'?'} campioni per "${FIELD_MAP[field]?.label||field}")`,'ok');
     loadStats(); loadLearningProgress();
   }catch(e){ showToast('Errore: '+e.message,'error'); }
   finally{ inp.disabled=false; }
@@ -845,14 +934,14 @@ async function loadLearningProgress() {
     const el=document.getElementById('learn-progress');
     const tracked=[...new Set([...ALL_FIELDS,...Object.keys(samples)])];
     const maxS=Math.max(10,...Object.values(samples));
-    el.innerHTML=tracked.filter(f=>(samples[f]||0)>0||currentMethods[f])
+    el.innerHTML=tracked.filter(f=>(samples[f]||0)>0)
       .sort((a,b)=>(samples[b]||0)-(samples[a]||0)).slice(0,15)
       .map(f=>{
-        const c=samples[f]||0; const pct=Math.min(100,(c/maxS)*100); const ready=c>=5;
+        const c=samples[f]||0; const pct=Math.min(100,(c/maxS)*100); const ready=c>=3;
         return `<div class="learn-field-row"><div class="learn-field-name">${FIELD_MAP[f]?.label||f}</div>
           <div class="learn-bar-wrap"><div class="learn-bar-fill ${ready?'ready':''}" style="width:${pct}%"></div></div>
-          <div class="learn-count">${c} ${ready?'✅ ML ON':''}</div></div>`;
-      }).join('')||'<div style="font-size:0.78rem;color:#888">Correggi i campi per iniziare il learning</div>';
+          <div class="learn-count">${c} ${ready?'✅ ready':''}</div></div>`;
+      }).join('')||'<div style="font-size:0.78rem;color:#888">Correggi i campi per alimentare il dataset</div>';
   }catch(e){}
 }
 
@@ -892,11 +981,11 @@ async function loadHistory(){
     const el=document.getElementById('history-list');
     if(!docs.length){ el.innerHTML='<div style="color:var(--ink-soft)">Nessun documento.</div>'; return; }
     el.innerHTML=docs.map(d=>`
-      <div style="background:white;border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.2rem;display:flex;align-items:center;gap:1rem;justify-content:space-between;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="background:white;border:1px solid var(--border);border-radius:var(--r);padding:1rem 1.2rem;margin-bottom:8px;display:flex;align-items:center;gap:1rem;justify-content:space-between;transition:border-color .15s" onmouseover="this.style.borderColor='var(--accent2)'" onmouseout="this.style.borderColor='var(--border)'">
         <div style="flex:1;min-width:0">
           <div style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.filename}</div>
           <div style="font-size:0.82rem;color:var(--ink-soft);margin-top:2px">${d.oggetto!=='N/D'?(d.oggetto||'').slice(0,120):'—'}</div>
-          <div style="font-size:0.72rem;color:#aaa;margin-top:4px;font-family:var(--font-m)">${new Date(d.date).toLocaleString('it-IT')} · ${d.procedura||''}</div>
+          <div style="font-size:0.72rem;color:#aaa;margin-top:4px;font-family:var(--font-m)">${new Date(d.date).toLocaleString('it-IT')} · ${d.procedura||''} · ${d.model_version||'rules-only'}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
           ${d.importo&&d.importo!=='N/D'?`<div style="font-family:var(--font-m);color:var(--ok);font-weight:600">${d.importo}</div>`:''}
@@ -925,7 +1014,7 @@ async function addTrainingSample(){
 }
 async function retrainModel(){
   const field=document.getElementById('retrain-field').value;
-  document.getElementById('train-result').textContent='⏳ Training...';
+  document.getElementById('train-result').textContent='⏳ Training supervisionato...';
   try{
     const res=await fetch(`${API}/api/train/${field}`,{method:'POST'});
     const data=await res.json();
@@ -941,83 +1030,169 @@ async function loadTrainingStats(){
     const samples=stats.training_samples||{};
     const models=stats.trained_models||[];
     const el=document.getElementById('models-status');
-    if(!models.length) el.innerHTML='<div style="color:var(--ink-soft)">Nessun modello. Correggi almeno 5 campi per attivare ML.</div>';
-    else el.innerHTML=models.map(m=>{
+    if(!models.length) el.innerHTML='<div style="color:var(--ink-soft)">Nessun modello addestrato. Aggiungi almeno 3 campioni e avvia il training.</div>';
+    else el.innerHTML=models.filter(m=>m.is_active).map(m=>{
       const acc=m.accuracy!=null?` · ${(m.accuracy*100).toFixed(0)}%`:'';
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div><div style="font-weight:500">${FIELD_MAP[m.field]?.icon||'🤖'} ${FIELD_MAP[m.field]?.label||m.field}</div><div style="font-size:0.72rem;color:var(--ink-soft)">${new Date(m.trained_at).toLocaleString('it-IT')}${acc}</div></div><div style="font-family:var(--font-m);font-size:0.8rem;color:var(--ok)">${m.samples} campioni</div></div>`;
+      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><div><div style="font-weight:500">${FIELD_MAP[m.field]?.icon||'🤖'} ${FIELD_MAP[m.field]?.label||m.field} <span style="font-size:0.72rem;color:var(--blue)">v${m.version}</span></div><div style="font-size:0.72rem;color:var(--ink-soft)">${new Date(m.trained_at).toLocaleString('it-IT')}${acc}</div></div><div style="font-family:var(--font-m);font-size:0.8rem;color:var(--ok)">${m.samples} campioni</div></div>`;
     }).join('');
-    // Samples per campo
     const flds=[...new Set([...ALL_FIELDS,...Object.keys(samples)])].filter(f=>(samples[f]||0)>0).sort((a,b)=>(samples[b]||0)-(samples[a]||0));
     if(flds.length){
       let h='<div style="margin-top:12px;border-top:1px solid var(--border);padding-top:8px"><div style="font-family:var(--font-m);font-size:0.65rem;color:var(--ink-soft);margin-bottom:6px;text-transform:uppercase;letter-spacing:.1em">Campioni per campo</div>';
-      flds.forEach(f=>{const c=samples[f]||0;const r=c>=5;h+=`<div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;padding:3px 0"><span style="width:180px;color:var(--ink-soft);font-size:0.78rem">${FIELD_MAP[f]?.label||f}</span><div style="flex:1;background:var(--paper2);height:5px;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,c*10)}%;background:${r?'var(--ok)':'var(--accent2)'};border-radius:3px"></div></div><span style="font-family:var(--font-m);font-size:0.72rem;color:${r?'var(--ok)':'#aaa'};width:60px;text-align:right">${c} ${r?'✅':''}</span></div>`;});
+      flds.forEach(f=>{const c=samples[f]||0;const r=c>=3;h+=`<div style="display:flex;align-items:center;gap:8px;font-size:0.8rem;padding:3px 0"><span style="width:180px;color:var(--ink-soft);font-size:0.78rem">${FIELD_MAP[f]?.label||f}</span><div style="flex:1;background:var(--paper2);height:5px;border-radius:3px;overflow:hidden"><div style="height:100%;width:${Math.min(100,c*10)}%;background:${r?'var(--ok)':'var(--accent2)'};border-radius:3px"></div></div><span style="font-family:var(--font-m);font-size:0.72rem;color:${r?'var(--ok)':'#aaa'};width:60px;text-align:right">${c} ${r?'✅':''}</span></div>`;});
       h+='</div>';
       el.innerHTML+=h;
     }
-    // Safe auto-learn stats
-    loadSafeLearnStats();
-    loadQuarantine();
   }catch(e){}
 }
 
 // ═══════════════════════════════════════════════════════════════
-// QUARANTINE & SAFE AUTO-LEARN
+// ADMIN: CORREZIONI
 // ═══════════════════════════════════════════════════════════════
-async function loadSafeLearnStats(){
-  try{
-    const res=await fetch(`${API}/api/auto-learn/stats`);
-    const s=await res.json();
-    document.getElementById('sl-auto').textContent=s.auto_learned||0;
-    document.getElementById('sl-quarantine').textContent=s.quarantine_pending||0;
-    document.getElementById('sl-skipped').textContent=(s.skipped||0)+(s.skip||0);
-    document.getElementById('sl-rollbacks').textContent=s.rollbacks||0;
-    document.getElementById('q-badge').textContent=s.quarantine_pending||0;
-  }catch(e){}
+async function loadAdminCorrections() {
+  try {
+    const res = await fetch(`${API}/api/corrections`);
+    const items = await res.json();
+    const tbody = document.getElementById('corrections-tbody');
+    document.getElementById('corrections-count').textContent = `${items.length} correzioni nel dataset`;
+    if (!items.length) { tbody.innerHTML = '<tr><td colspan="5" class="admin-empty">Nessuna correzione. Analizza un PDF e correggi i campi.</td></tr>'; return; }
+    tbody.innerHTML = items.map(c => {
+      const fl = FIELD_MAP[c.field];
+      const label = fl ? `${fl.icon} ${fl.label}` : c.field;
+      const date = c.timestamp ? new Date(c.timestamp).toLocaleString('it-IT') : '—';
+      const src = c.source ? `<span class="badge-sm inactive">${c.source}</span>` : '';
+      return `<tr>
+        <td><strong>${label}</strong> ${src}</td>
+        <td style="font-size:0.8rem;color:var(--ink-soft);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.original||'')}">${escapeHtml(c.original||'—')}</td>
+        <td style="font-size:0.8rem;font-weight:500;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(c.corrected||'')}">${escapeHtml(c.corrected||'')}</td>
+        <td style="font-family:var(--font-m);font-size:0.72rem;color:var(--ink-soft)">${date}</td>
+        <td>
+          <button class="btn" style="padding:4px 8px;font-size:0.72rem" onclick="deleteCorrection(${c.id},${c.sample_id})">🗑️</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch(e) { document.getElementById('corrections-tbody').innerHTML = '<tr><td colspan="5" class="admin-empty">Errore caricamento</td></tr>'; }
 }
-async function loadQuarantine(){
-  try{
-    const res=await fetch(`${API}/api/quarantine`);
-    const items=await res.json();
-    const el=document.getElementById('quarantine-list');
-    const badge=document.getElementById('q-badge');
-    badge.textContent=items.length;
-    if(!items.length){el.innerHTML='<div style="color:var(--ink-soft);font-size:0.85rem">✅ Nessun campione in attesa — tutto pulito!</div>';return;}
-    el.innerHTML=items.map(q=>{
-      const fl=FIELD_MAP[q.field];
-      const confPct=(q.confidence*100).toFixed(0);
-      const snipPreview=(q.snippet||'').slice(0,200).replace(/</g,'&lt;');
-      return `<div class="q-card" id="qcard-${q.id}">
-        <div class="q-info">
-          <div class="q-field">${fl?.icon||'📋'} ${fl?.label||q.field}</div>
-          <div class="q-value">${q.value}</div>
-          <span class="q-conf mid">📊 ${confPct}%</span>
-          ${snipPreview?`<div class="q-snippet">${snipPreview}...</div>`:''}
+
+async function deleteCorrection(correctionId, sampleId) {
+  if (!confirm('Eliminare questa correzione e il relativo training sample?')) return;
+  try {
+    if (correctionId) await fetch(`${API}/api/corrections/${correctionId}`, { method: 'DELETE' });
+    else if (sampleId) await fetch(`${API}/api/training-sample/${sampleId}`, { method: 'DELETE' });
+    showToast('Correzione eliminata', 'ok');
+    loadAdminCorrections();
+  } catch(e) { showToast('Errore', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN: CAMPI CUSTOM
+// ═══════════════════════════════════════════════════════════════
+async function loadCustomFields() {
+  try {
+    const res = await fetch(`${API}/api/fields/custom`);
+    const fields = await res.json();
+    const el = document.getElementById('custom-fields-list');
+    if (!fields.length) { el.innerHTML = '<div style="color:var(--ink-soft);font-size:0.85rem">Nessun campo custom. Aggiungine uno sopra.</div>'; return; }
+    el.innerHTML = fields.map(f => `
+      <div style="background:white;border:1px solid var(--border);border-radius:var(--r);padding:0.8rem 1rem;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:500">${f.icon||'🔧'} ${f.label} <span style="font-family:var(--font-m);font-size:0.72rem;color:var(--ink-soft)">${f.key}</span></div>
+          <div style="font-size:0.75rem;color:var(--ink-soft)">${f.category} · ${f.field_type} · ${(f.patterns||[]).length} pattern</div>
         </div>
-        <div class="q-actions">
-          <button class="q-btn approve" onclick="approveQ(${q.id})">✅ Approva</button>
-          <button class="q-btn reject" onclick="rejectQ(${q.id})">❌ Rifiuta</button>
+        <button class="btn danger" style="padding:4px 10px;font-size:0.72rem" onclick="deleteCustomField('${f.key}')">🗑️ Elimina</button>
+      </div>`).join('');
+  } catch(e) { document.getElementById('custom-fields-list').innerHTML = '<div style="color:var(--accent)">Errore</div>'; }
+}
+
+async function addCustomField() {
+  const key = document.getElementById('cf-key').value.trim();
+  const label = document.getElementById('cf-label').value.trim();
+  const category = document.getElementById('cf-category').value;
+  const type = document.getElementById('cf-type').value;
+  const patternsRaw = document.getElementById('cf-patterns').value.trim();
+  if (!key || !label) { showToast('Chiave e etichetta obbligatorie', 'error'); return; }
+  const patterns = patternsRaw ? patternsRaw.split('\n').filter(p => p.trim()) : [];
+  try {
+    const res = await fetch(`${API}/api/fields/custom`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, label, category, field_type: type, patterns, icon: '🔧' })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast(`Campo "${label}" aggiunto`, 'ok');
+      document.getElementById('cf-key').value = '';
+      document.getElementById('cf-label').value = '';
+      document.getElementById('cf-patterns').value = '';
+      loadCustomFields();
+    } else { showToast(data.detail || 'Errore', 'error'); }
+  } catch(e) { showToast('Errore', 'error'); }
+}
+
+async function deleteCustomField(key) {
+  if (!confirm(`Eliminare il campo custom "${key}"?`)) return;
+  try {
+    await fetch(`${API}/api/fields/custom/${key}`, { method: 'DELETE' });
+    showToast('Campo eliminato', 'ok');
+    loadCustomFields();
+  } catch(e) { showToast('Errore', 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN: MODEL VERSIONS
+// ═══════════════════════════════════════════════════════════════
+async function loadModelVersions() {
+  try {
+    const res = await fetch(`${API}/api/models/versions`);
+    const versions = await res.json();
+    const el = document.getElementById('model-versions-list');
+    if (!versions.length) { el.innerHTML = '<div style="color:var(--ink-soft);font-size:0.85rem">Nessun modello addestrato. Vai su Training per addestrare il primo modello.</div>'; return; }
+    el.innerHTML = versions.map(v => {
+      const fl = FIELD_MAP[v.field];
+      const label = fl ? `${fl.icon} ${fl.label}` : v.field;
+      const acc = v.accuracy != null ? `${(v.accuracy*100).toFixed(0)}%` : '—';
+      const date = v.trained_at ? new Date(v.trained_at).toLocaleString('it-IT') : '—';
+      const activeBadge = v.is_active ? '<span class="badge-sm active">ATTIVO</span>' : '<span class="badge-sm inactive">inattivo</span>';
+      const rollbackBtn = !v.is_active ? '' : `<button class="btn" style="padding:4px 10px;font-size:0.72rem" onclick="rollbackModel('${v.field}')">⏪ Rollback</button>`;
+      return `<div class="version-card ${v.is_active?'is-active':''}">
+        <div style="flex:1">
+          <div style="font-weight:500">${label} <span style="font-family:var(--font-m);font-size:0.82rem;color:var(--blue)">v${v.version}</span> ${activeBadge}</div>
+          <div style="font-size:0.75rem;color:var(--ink-soft)">${date} · Accuratezza: ${acc} · ${v.samples||0} campioni</div>
+          ${v.notes ? `<div style="font-size:0.72rem;color:#999;margin-top:2px">${escapeHtml(v.notes)}</div>` : ''}
         </div>
+        ${rollbackBtn}
       </div>`;
     }).join('');
-  }catch(e){document.getElementById('quarantine-list').innerHTML='<div style="color:var(--accent)">Errore caricamento</div>';}
+  } catch(e) { document.getElementById('model-versions-list').innerHTML = '<div style="color:var(--accent)">Errore caricamento</div>'; }
 }
-async function approveQ(id){
-  try{
-    const res=await fetch(`${API}/api/quarantine/${id}/approve`,{method:'POST'});
-    const data=await res.json();
-    document.getElementById(`qcard-${id}`)?.remove();
-    const msg=data.retrained?`✅ Approvato e modello "${FIELD_MAP[data.field]?.label||data.field}" riaddestrato!`:`✅ Approvato (${data.sample_count} campioni per ${FIELD_MAP[data.field]?.label||data.field})`;
-    showToast(msg,'ok');
-    loadSafeLearnStats();
-  }catch(e){showToast('Errore','error');}
+
+async function rollbackModel(field) {
+  if (!confirm(`Ripristinare il modello precedente per "${FIELD_MAP[field]?.label||field}"?`)) return;
+  try {
+    const res = await fetch(`${API}/api/models/${field}/rollback`, { method: 'POST' });
+    const data = await res.json();
+    showToast(data.message || 'Rollback completato', data.status === 'ok' ? 'ok' : 'error');
+    loadModelVersions(); loadStats();
+  } catch(e) { showToast('Errore', 'error'); }
 }
-async function rejectQ(id){
-  try{
-    await fetch(`${API}/api/quarantine/${id}/reject`,{method:'POST'});
-    document.getElementById(`qcard-${id}`)?.remove();
-    showToast('❌ Campione rifiutato — non entrerà nel training','ok');
-    loadSafeLearnStats();
-  }catch(e){showToast('Errore','error');}
+
+// ═══════════════════════════════════════════════════════════════
+// ADMIN: PIPELINE STATUS
+// ═══════════════════════════════════════════════════════════════
+async function loadPipelineStatus() {
+  try {
+    const res = await fetch(`${API}/api/pipeline/status`);
+    const data = await res.json();
+    const el = document.getElementById('pipeline-status-info');
+    const stats = data.stats || {};
+    const models = data.models || [];
+    el.innerHTML = `
+      <div><strong>Documenti analizzati:</strong> ${stats.total_documents || 0}</div>
+      <div><strong>Correzioni totali:</strong> ${stats.total_corrections || 0}</div>
+      <div><strong>Modelli ML caricati:</strong> ${(stats.loaded_ml_models || []).join(', ') || 'Nessuno'}</div>
+      <div><strong>Versioni attive:</strong> ${models.filter(m=>m.is_active).map(m=>`${m.field} v${m.version}`).join(', ') || 'Solo regole'}</div>
+      <div><strong>Training mode:</strong> ${data.training_mode || 'supervised_only'}</div>
+      <div><strong>Auto-learn:</strong> <span style="color:var(--accent);font-weight:600">DISABILITATO</span></div>
+    `;
+  } catch(e) { document.getElementById('pipeline-status-info').textContent = 'Server non raggiungibile'; }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1031,8 +1206,8 @@ async function loadStats(){
     document.getElementById('stat-corrections').textContent=stats.total_corrections||0;
     const models=stats.trained_models||[];
     const el=document.getElementById('models-list');
-    if(!models.length) el.innerHTML='<div class="model-badge"><div class="model-dot"></div>Nessun modello ML</div>';
-    else el.innerHTML=models.map(m=>`<div class="model-badge"><div class="model-dot active"></div><span>${FIELD_MAP[m.field]?.label||m.field} <span style="color:#666">(${m.samples})</span></span></div>`).join('');
+    if(!models.length) el.innerHTML='<div class="model-badge"><div class="model-dot"></div>Solo regole</div>';
+    else el.innerHTML=models.filter(m=>m.is_active).map(m=>`<div class="model-badge"><div class="model-dot active"></div><span>${FIELD_MAP[m.field]?.label||m.field} v${m.version}</span></div>`).join('');
   }catch(e){}
 }
 
