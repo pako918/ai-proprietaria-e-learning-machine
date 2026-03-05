@@ -223,6 +223,7 @@ def build_output(nested: dict) -> dict:
                 importo_complessivo_lavori_progettati_euro=_parse_float(cat.get("importo_minimo")),
             ))
         servizi_punta = ServiziDiPunta(
+            numero=srv.get("numero_servizi"),
             periodo=srv.get("periodo_riferimento"),
             tipologia=srv.get("tipologia"),
             categorie=categorie_srv,

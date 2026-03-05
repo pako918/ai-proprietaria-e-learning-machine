@@ -1410,6 +1410,115 @@ def extract_rules_based(text: str) -> dict:
                 srv["servizi_analoghi"] = {"richiesti": True}
             srv["servizi_analoghi"]["categorie_richieste"] = cats_list
 
+    # Fallback: parse TABELLA pipe-delimited rows for CATEGORIA D'OPERA
+    # Prefer the "Importo complessivo dei lavori progettati" table (servizi di punta)
+    if not srv.get("servizi_analoghi", {}).get("categorie_richieste"):
+        _tab_cats_primary = []   # from "Importo complessivo" table
+        _tab_cats_fallback = []  # from any other CATEGORIA table
+        for tab_m in re.finditer(
+            r"\[TABELLA[^\]]*\]\n(.*?)(?=\n\n|\n---|\n\[TABELLA|\Z)", text, re.DOTALL
+        ):
+            tab_text = tab_m.group(1)
+            if "CATEGORIA" not in tab_text.upper():
+                continue
+            is_servizi_punta = "Importo complessivo" in tab_text or "lavori progettati" in tab_text
+            target_list = _tab_cats_primary if is_servizi_punta else _tab_cats_fallback
+            lines = tab_text.split("\n")
+            acc_desc = ""
+            in_header = True  # skip header rows
+            for line in lines:
+                if "|" in line:
+                    parts = [p.strip() for p in line.split("|")]
+                    codes_in_row = [p for p in parts if re.match(r"^(?:E|S|IA|D|V)\.?\d{2}$", p)]
+                    if codes_in_row:
+                        in_header = False
+                        imp_cell = None
+                        grado_cell = None
+                        desc_cell = acc_desc
+                        for p in parts:
+                            if p in codes_in_row or not p:
+                                continue
+                            if re.match(r"^€?\s*[\d.,]+(?:\s*€)?$", p) and len(p) > 4:
+                                v = _parse_euro(p)
+                                if v and v > 10000:
+                                    imp_cell = v
+                                elif v and v < 10:
+                                    grado_cell = v
+                            elif re.match(r"^\d+[.,]\d{1,2}$", p):
+                                grado_cell = float(p.replace(",", "."))
+                            elif len(p) > 10 and not re.match(r"^[\d.,€\s]+$", p):
+                                desc_cell = (desc_cell + " " + p).strip() if desc_cell else p
+                        for code in codes_in_row:
+                            code_norm = code if "." in code else code[:len(code)-2] + "." + code[-2:]
+                            entry = {"categoria": code_norm}
+                            if desc_cell:
+                                entry["descrizione"] = _clean(desc_cell)[:200]
+                            if imp_cell:
+                                entry["importo_minimo"] = imp_cell
+                            if grado_cell:
+                                entry["grado_complessita"] = grado_cell
+                            if not any(c.get("categoria") == code_norm for c in target_list):
+                                target_list.append(entry)
+                        acc_desc = ""
+                    elif not in_header:
+                        desc_parts = [p for p in parts if p and len(p) > 5
+                                      and not re.match(r"^[\d.,€\s]+$", p)
+                                      and "TOTALE" not in p.upper()]
+                        if desc_parts:
+                            acc_desc = (acc_desc + " " + " ".join(desc_parts)).strip()
+                    else:
+                        # Still in header - skip
+                        pass
+                else:
+                    stripped = line.strip()
+                    # Detect start of category descriptions (EDILIZIA, IMPIANTI, etc.)
+                    if in_header and re.match(
+                        r"(?:EDILIZIA|IMPIANTI|STRUTTUR|IDRAULIC|VIABILIT|INFRASTRUTTUR)",
+                        stripped, re.IGNORECASE,
+                    ):
+                        in_header = False
+                    if not in_header and stripped and len(stripped) > 3 and "TOTALE" not in stripped.upper():
+                        acc_desc = (acc_desc + " " + stripped).strip() if acc_desc else stripped
+
+        chosen = _tab_cats_primary or _tab_cats_fallback
+        if chosen:
+            if "servizi_analoghi" not in srv:
+                srv["servizi_analoghi"] = {"richiesti": True}
+            srv["servizi_analoghi"]["categorie_richieste"] = chosen
+
+    # Arricchisci servizi_analoghi con numero, periodo, tipologia
+    sa = srv.get("servizi_analoghi", {})
+    if sa.get("richiesti") and sa.get("categorie_richieste"):
+        # Cerca "n. X servizi" (max number of services)
+        if not sa.get("numero_servizi"):
+            m_num = re.search(
+                r"n\.\s*(\d+)\s*(?:\([^)]*\)\s*)?servizi",
+                text, re.IGNORECASE,
+            )
+            if m_num:
+                sa["numero_servizi"] = int(m_num.group(1))
+            else:
+                # Fallback: "max di N servizi" in table header
+                m_num2 = re.search(r"max\s+di\s+n\.\s*(\d+)\s+servizi", text, re.IGNORECASE)
+                if m_num2:
+                    sa["numero_servizi"] = int(m_num2.group(1))
+        # Cerca periodo di riferimento
+        if not sa.get("periodo_riferimento"):
+            m_per = re.search(
+                r"(?:nei|negli)\s+((?:ultimi\s+)?\w+\s+anni\s+antecedent[^.,;]{0,100})",
+                text, re.IGNORECASE,
+            )
+            if m_per:
+                sa["periodo_riferimento"] = _clean(m_per.group(1))[:150]
+        # Cerca tipologia servizi
+        if not sa.get("tipologia"):
+            m_tip = re.search(
+                r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+([^,]{5,80}?)(?:\s*,\s*relativ|\s*\.)",
+                text, re.IGNORECASE,
+            )
+            if m_tip:
+                sa["tipologia"] = _clean(m_tip.group(1))[:100]
+
     # Personale tecnico medio
     m_pers = re.search(r"(?:organico|personale)\s+(?:tecnico\s+)?medio[^.]{0,100}?(\d+)\s*(?:unit[àa]|dipendent)", text, re.IGNORECASE)
     if m_pers:
