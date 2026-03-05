@@ -12,7 +12,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copia il progetto
-COPY ai_engine.py server.py pipeline.py field_registry.py pdf_parser.py \
+COPY server.py pipeline.py field_registry.py pdf_parser.py \
      schemas.py ml_engine.py extract_disciplinari.py \
      config.py database.py utils.py log_config.py \
      index.html ./

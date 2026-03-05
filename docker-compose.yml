@@ -10,8 +10,10 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-      - CORS_ORIGINS=*
+      - APPALTOAI_LOG_LEVEL=INFO
+      - APPALTOAI_CORS_ORIGINS=*
+      - APPALTOAI_HOST=0.0.0.0
+      - APPALTOAI_PORT=8000
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s

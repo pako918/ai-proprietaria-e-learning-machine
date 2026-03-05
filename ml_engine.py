@@ -28,6 +28,7 @@ import re
 import time
 import shutil
 from datetime import datetime
+from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 from collections import Counter, defaultdict
 
@@ -38,34 +39,17 @@ from sklearn.pipeline import Pipeline as SkPipeline, FeatureUnion
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import accuracy_score, f1_score
 
-from config import MODEL_DIR, DB_PATH
+from config import (
+    MODEL_DIR, DB_PATH,
+    MIN_SAMPLES_TRAIN, MIN_SAMPLES_CV, MIN_IMPROVEMENT,
+    DEFAULT_CONFIDENCE_THRESHOLD, ML_OVERRIDE_THRESHOLD,
+    DATA_QUALITY_WEIGHTS,
+)
 from database import get_connection, init_ml_tables
 from utils import find_value_context
 from log_config import get_logger
 
 logger = get_logger("ml_engine")
-
-# ═════════════════════════════════════════════════════════════════════
-# CONFIGURAZIONE ML
-# ═════════════════════════════════════════════════════════════════════
-
-from config import (
-    MIN_SAMPLES_TRAIN,
-    MIN_SAMPLES_CV,
-    MIN_IMPROVEMENT,
-    DEFAULT_CONFIDENCE_THRESHOLD,
-    ML_OVERRIDE_THRESHOLD,
-)
-
-# Pesi qualità per fonte dati — le correzioni umane valgono di più
-DATA_QUALITY_WEIGHTS = {
-    "correction":       1.0,    # Correzione umana = qualità massima
-    "manual":           0.95,   # Esempio aggiunto manualmente
-    "approved":         0.90,   # Approvato da quarantena
-    "rules_validated":  0.60,   # Estratto da regole + formato validato
-    "rules_raw":        0.35,   # Estratto da regole, non validato
-    "auto":             0.20,   # Auto-raccolto
-}
 
 
 # ═════════════════════════════════════════════════════════════════════
