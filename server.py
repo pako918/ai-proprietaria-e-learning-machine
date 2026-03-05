@@ -71,11 +71,10 @@ if HAS_FASTAPI:
         stats = pipeline.get_stats()
         return {
             "status": "ok",
-            "version": "2.0.0",
-            "architecture": "9-phase supervised pipeline",
-            "training_mode": "supervised_only",
-            "auto_learn": False,
-            "ml_models_loaded": list(pipeline.nlp.models.keys()),
+            "version": "3.0.0",
+            "architecture": "ML-powered extraction pipeline",
+            "learning_mode": "data-driven supervised",
+            "ml_engine": pipeline.get_ml_status(),
             "stats": stats,
         }
 
@@ -291,19 +290,75 @@ if HAS_FASTAPI:
             raise HTTPException(404, f"Campo custom '{key}' non trovato")
         return {"status": "ok"}
 
-    # ══════════════════════════════════════════════════════════════════════
-    # PIPELINE STATUS
+    # ══════════════════════════════════════════════════════════════════════    # ML ENGINE — Machine Learning (il modello impara dai dati)
+    # ══════════════════════════════════════════════════════════════════
+
+    @app.get("/api/ml/status")
+    async def ml_status():
+        """Stato del motore ML: modelli attivi, dati, configurazione."""
+        return pipeline.get_ml_status()
+
+    @app.get("/api/ml/quality")
+    async def ml_quality():
+        """Report qualità dati e modelli con raccomandazioni."""
+        return pipeline.get_ml_quality()
+
+    @app.post("/api/ml/train")
+    async def ml_train_all():
+        """Addestra tutti i modelli con dati sufficienti."""
+        return pipeline.train_all()
+
+    @app.post("/api/ml/train/{field}")
+    async def ml_train_field(field: str):
+        """Addestra il modello per un campo specifico."""
+        return pipeline.train_field(field)
+
+    @app.get("/api/ml/learning-curve/{field}")
+    async def ml_learning_curve(field: str):
+        """Curva di apprendimento: come l'accuracy migliora con più dati."""
+        from ml_engine import ml_engine as ml_eng
+        return ml_eng.get_learning_curve(field)
+
+    @app.get("/api/ml/data")
+    async def ml_data_stats():
+        """Statistiche dataset di training ML."""
+        from ml_engine import ml_engine as ml_eng
+        return ml_eng.data.get_data_quality()
+
+    @app.get("/api/ml/data/{field}")
+    async def ml_data_field(field: str):
+        """Statistiche dati per un campo specifico."""
+        from ml_engine import ml_engine as ml_eng
+        return ml_eng.data.get_data_quality(field)
+
+    @app.post("/api/ml/rollback/{field}")
+    async def ml_rollback(field: str):
+        """Ripristina il modello precedente."""
+        from ml_engine import ml_engine as ml_eng
+        result = ml_eng.rollback_field(field)
+        if result.get("status") == "error":
+            raise HTTPException(400, result["message"])
+        return result
+
+    @app.get("/api/ml/versions")
+    async def ml_model_versions(field: str = Query(None)):
+        """Storico versioni modelli ML."""
+        from ml_engine import ml_engine as ml_eng
+        return ml_eng.get_model_versions(field)
+
+    # ══════════════════════════════════════════════════════════════════    # PIPELINE STATUS
     # ══════════════════════════════════════════════════════════════════════
 
     @app.get("/api/pipeline/status")
     async def pipeline_status():
         stats = pipeline.get_stats()
         versions = pipeline.get_model_versions()
+        ml_status = pipeline.get_ml_status()
         return {
-            "pipeline_version": "2.0.0",
-            "architecture": "9-phase supervised",
-            "training_mode": "supervised_only",
-            "auto_learn": False,
+            "pipeline_version": "3.0.0",
+            "architecture": "ML-powered extraction",
+            "learning_mode": "data-driven supervised",
+            "ml_engine": ml_status,
             "stats": stats,
             "models": versions,
         }

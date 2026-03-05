@@ -1,7 +1,8 @@
 """
-AppaltoAI - Motore Ibrido MODULARE
+AppaltoAI - Motore Ibrido MODULARE + ML Engine
 Addestrato su bandi reali D.Lgs. 36/2023 - Servizi di Ingegneria e Architettura
 Usa field_registry.py come fonte unica di verità per i campi.
+Il modello impara schemi dai dati via ml_engine.py
 """
 
 import re
@@ -16,6 +17,11 @@ from sklearn.linear_model import SGDClassifier
 from sklearn.pipeline import Pipeline
 
 from field_registry import registry, get_validator
+try:
+    from ml_engine import ml_engine as ml
+    HAS_ML_ENGINE = True
+except ImportError:
+    HAS_ML_ENGINE = False
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -726,21 +732,34 @@ class AppaltoExtractor:
                 _snippets[key] = ctx
 
         # ── ML fallback — esteso a TUTTI i campi testuali ─────────────────
-        ml_candidates = [
-            k for k, v in r.items()
-            if not k.startswith('_')
-            and v in [None, "", 0]
-            and not isinstance(v, (bool, dict, list))
-            and k in self.ml_models
-        ]
-        for field in ml_candidates:
-            pred = self._ml_predict(field, text[:3000])
-            if pred:
-                r[field] = pred
-                _methods[field] = "ml"
-                ctx = self._find_value_context(text, str(pred))
-                if ctx:
-                    _snippets[field] = ctx
+        # Usa ML Engine per predizioni basate su modelli addestrati sui dati
+        if HAS_ML_ENGINE:
+            try:
+                r, ml_new_methods = ml.enhance_result(r, text)
+                _methods.update(ml_new_methods)
+                for key in ml_new_methods:
+                    if key not in _snippets:
+                        ctx = self._find_value_context(text, str(r.get(key, "")))
+                        if ctx:
+                            _snippets[key] = ctx
+            except Exception:
+                pass
+        else:
+            ml_candidates = [
+                k for k, v in r.items()
+                if not k.startswith('_')
+                and v in [None, "", 0]
+                and not isinstance(v, (bool, dict, list))
+                and k in self.ml_models
+            ]
+            for field in ml_candidates:
+                pred = self._ml_predict(field, text[:3000])
+                if pred:
+                    r[field] = pred
+                    _methods[field] = "ml"
+                    ctx = self._find_value_context(text, str(pred))
+                    if ctx:
+                        _snippets[field] = ctx
 
         r["_snippets"] = _snippets
         r["_methods"] = _methods
@@ -760,12 +779,19 @@ class AppaltoExtractor:
             and v not in empty_objects
         )
         r["_confidence"] = round(filled / max(total, 1) * 100, 1)
-        r["_extraction_method"] = "hybrid" if any(m == "ml" for m in _methods.values()) else "rules"
+        r["_extraction_method"] = "hybrid" if any("ml" in str(m) for m in _methods.values()) else "rules"
         r["_timestamp"] = datetime.now().isoformat()
 
         # Genera doc_id (il salvataggio è gestito dalla pipeline)
         doc_id = hashlib.sha256((filename + text[:500]).encode()).hexdigest()[:16]
         r["_doc_id"] = doc_id
+
+        # Raccolta dati ML — ogni documento arricchisce il dataset
+        if HAS_ML_ENGINE:
+            try:
+                ml.collect_from_extraction(text, r, _methods, doc_id=doc_id)
+            except Exception:
+                pass
 
         # Quarantena supervisionata — raccoglie candidati per review umano
         # MAI training automatico. L'utente decide quando riaddestrare.
@@ -1145,6 +1171,16 @@ class AppaltoExtractor:
                   (json.dumps(cd, ensure_ascii=False), doc_id))
         conn.commit()
         conn.close()
+
+        # Feed correzione al ML Engine — dati di alta qualità
+        if HAS_ML_ENGINE:
+            try:
+                ml.add_correction(
+                    field, training_snippet, corrected,
+                    wrong_value=original, doc_id=doc_id
+                )
+            except Exception:
+                pass
 
         count = self._get_sample_count(field)
         # MAI training automatico. Solo supervisionato.

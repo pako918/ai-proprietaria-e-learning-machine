@@ -35,6 +35,12 @@ from typing import Optional, Dict, List, Tuple, Any
 from field_registry import registry, get_validator
 from pdf_parser import parse_pdf, get_text_with_tables, get_page_for_text, ParsedDocument
 from schemas import full_validation
+from ml_engine import ml_engine as ml
+from extract_disciplinari import (
+    extract_rules_based as disciplinari_extract,
+    flatten_for_pipeline as disciplinari_flatten,
+    extract_text_from_pdf as disciplinari_parse_pdf,
+)
 
 BASE_DIR = Path(__file__).parent
 DATA_DIR = BASE_DIR / "data"
@@ -591,7 +597,7 @@ class Pipeline:
             return {"error": "Impossibile estrarre testo dal PDF", "_pipeline_phase": "parse_failed"}
 
         # FASI 3-6
-        result = self._extract_and_build(text, filename)
+        result = self._extract_and_build(text, filename, pdf_bytes=pdf_bytes)
 
         # Aggiungi metadati PDF
         if parsed and parsed.pages:
@@ -635,19 +641,49 @@ class Pipeline:
         result["_pipeline_time_ms"] = round((time.time() - t_start) * 1000, 1)
         return result
 
-    def _extract_and_build(self, text: str, filename: str) -> dict:
+    def _extract_and_build(self, text: str, filename: str, pdf_bytes: bytes = None) -> dict:
         """Fasi 3-6: Rules → NLP → Build JSON → Validate."""
-        # FASE 2: Estrazione deterministica
-        rules_result, snippets, methods = self.rules.extract(text)
+        # FASE 2: Estrazione deterministica avanzata (extract_disciplinari)
+        #   Usa l'estrattore completo con 20+ sezioni e 100+ campi
+        #   Se abbiamo il pdf_bytes, usiamo il parser di extract_disciplinari
+        #   per ottenere testo piu fedele alle tabelle originali
+        try:
+            if pdf_bytes:
+                import tempfile, os
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(pdf_bytes)
+                    tmp_path = tmp.name
+                try:
+                    disc_text = disciplinari_parse_pdf(tmp_path)
+                finally:
+                    os.unlink(tmp_path)
+                nested_result = disciplinari_extract(disc_text)
+            else:
+                nested_result = disciplinari_extract(text)
+            rules_result, snippets, methods = disciplinari_flatten(nested_result)
+        except Exception as _exc:
+            # Fallback al vecchio estrattore base se il nuovo fallisce
+            import traceback, sys
+            print(f"[WARN] disciplinari extractor failed: {_exc}", file=sys.stderr)
+            traceback.print_exc(file=sys.stderr)
+            rules_result, snippets, methods = self.rules.extract(text)
 
-        # FASE 3: NLP classificazione
-        rules_result["tipo_procedura"] = self.nlp.classify_procedure(text)
-        rules_result["criterio_aggiudicazione"] = self.nlp.classify_criterio(text)
-        methods["tipo_procedura"] = "rules"
-        methods["criterio_aggiudicazione"] = "rules"
+        # FASE 3: NLP classificazione (arricchisce tipo_procedura se mancante)
+        nlp_tipo = self.nlp.classify_procedure(text)
+        if nlp_tipo and nlp_tipo != "Non specificata":
+            if not rules_result.get("tipo_procedura"):
+                rules_result["tipo_procedura"] = nlp_tipo
+        nlp_criterio = self.nlp.classify_criterio(text)
+        if nlp_criterio and nlp_criterio != "Non specificato":
+            if not rules_result.get("criterio_aggiudicazione"):
+                rules_result["criterio_aggiudicazione"] = nlp_criterio
+        if "tipo_procedura" not in methods and rules_result.get("tipo_procedura"):
+            methods["tipo_procedura"] = "rules"
+        if "criterio_aggiudicazione" not in methods and rules_result.get("criterio_aggiudicazione"):
+            methods["criterio_aggiudicazione"] = "rules"
 
-        # FASE 3b: ML fallback campi vuoti
-        rules_result, ml_methods = self.nlp.fill_missing(rules_result, text)
+        # FASE 3b: ML Engine — i modelli imparano schemi dai dati
+        rules_result, ml_methods = ml.enhance_result(rules_result, text)
         methods.update(ml_methods)
         for key in ml_methods:
             if key not in snippets:
@@ -685,6 +721,22 @@ class Pipeline:
             validation = full_validation(result)
             result["_coherence"] = validation["coherence"]
             result["_validation_warnings"] = validation["warnings"]
+        except Exception:
+            pass
+
+        # FASE 6b: Raccolta Dati ML — ogni documento arricchisce il dataset
+        # Il modello impara schemi dai dati: più documenti = modello migliore
+        try:
+            n_collected = ml.collect_from_extraction(text, result, methods, doc_id=doc_id)
+            result["_ml_data_collected"] = n_collected
+        except Exception:
+            pass
+
+        # ML Engine status nel risultato
+        try:
+            ml_status = ml.get_status()
+            result["_ml_models_active"] = ml_status["active_models"]
+            result["_ml_training_data"] = ml_status["total_training_data"]
         except Exception:
             pass
 
@@ -749,90 +801,57 @@ class Pipeline:
                   (json.dumps(cd, ensure_ascii=False), doc_id))
         conn.commit()
         conn.close()
+
+        # Feed correzione al ML Engine — dati di alta qualità
+        try:
+            ml.add_correction(
+                field, training_snippet, corrected,
+                wrong_value=original, doc_id=doc_id
+            )
+        except Exception:
+            pass
+
         count = self._get_sample_count(field)
-        return {"status": "ok", "field": field, "sample_count": count,
-                "message": f"Correzione salvata ({count} campioni). Training manuale disponibile."}
+        ml_data = ml.data.get_all_fields()
+        ml_count = ml_data.get(field, 0)
+        can_train = ml_count >= 3
+        return {
+            "status": "ok", "field": field,
+            "sample_count": count,
+            "ml_samples": ml_count,
+            "can_train": can_train,
+            "message": (
+                f"Correzione salvata ({ml_count} campioni ML)."
+                + (" Puoi addestrare il modello!" if can_train
+                   else f" Servono {3 - ml_count} campioni in più.")
+            ),
+        }
 
     # ═══════════════════════════════════════════════════════════════
     # FASE 8: RETRAINING SUPERVISIONATO (MAI AUTOMATICO)
     # ═══════════════════════════════════════════════════════════════
 
     def train_field(self, field: str) -> dict:
-        """Retraining supervisionato. Solo l'admin lo attiva."""
-        from sklearn.feature_extraction.text import TfidfVectorizer
-        from sklearn.linear_model import SGDClassifier
-        from sklearn.pipeline import Pipeline as SkPipeline
-        import random
+        """Training supervisionato via ML Engine.
+        Il modello impara schemi dai dati. La qualità dei dati
+        determina la qualità del modello.
 
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        rows = c.execute("SELECT text_snippet, correct_value FROM training_samples WHERE field=?", (field,)).fetchall()
-        if len(rows) < 3:
-            conn.close()
-            return {"status": "error", "message": f"Campioni insufficienti ({len(rows)}/3) per '{field}'."}
+        Usa: Dual TF-IDF (word + char n-grams) + LogisticRegression
+        con cross-validation, quality weighting, rollback automatico.
+        """
+        return ml.train_field(field)
 
-        texts = [r[0] for r in rows]
-        labels = [r[1] for r in rows]
-        old_model = self.nlp.models.get(field)
-        old_accuracy = new_accuracy = None
+    def train_all(self) -> dict:
+        """Addestra tutti i modelli con dati sufficienti."""
+        return ml.train_all()
 
-        if len(rows) >= 6:
-            indices = list(range(len(rows)))
-            random.seed(42); random.shuffle(indices)
-            split = max(2, int(len(indices) * 0.2))
-            test_idx = set(indices[:split])
-            train_texts = [texts[i] for i in indices if i not in test_idx]
-            train_labels = [labels[i] for i in indices if i not in test_idx]
-            test_texts = [texts[i] for i in test_idx]
-            test_labels = [labels[i] for i in test_idx]
-            if len(set(train_labels)) >= 2 or len(set(labels)) == 1:
-                if old_model:
-                    try:
-                        old_preds = old_model.predict(test_texts)
-                        old_accuracy = sum(1 for p, t in zip(old_preds, test_labels) if p == t) / len(test_labels)
-                    except Exception:
-                        pass
-                try:
-                    tp = SkPipeline([("tfidf", TfidfVectorizer(ngram_range=(1, 3), max_features=8000, analyzer="char_wb")),
-                                     ("clf", SGDClassifier(loss="hinge", max_iter=1000, random_state=42))])
-                    tp.fit(train_texts, train_labels)
-                    new_preds = tp.predict(test_texts)
-                    new_accuracy = sum(1 for p, t in zip(new_preds, test_labels) if p == t) / len(test_labels)
-                except Exception:
-                    pass
-                if old_accuracy is not None and new_accuracy is not None and new_accuracy < old_accuracy - 0.05:
-                    conn.close()
-                    return {"status": "rollback",
-                            "message": f"⚠ Nuovo modello peggio ({new_accuracy:.0%} vs {old_accuracy:.0%}). Mantenuto vecchio.",
-                            "old_accuracy": old_accuracy, "new_accuracy": new_accuracy}
+    def get_ml_status(self) -> dict:
+        """Stato del motore ML."""
+        return ml.get_status()
 
-        pipeline_model = SkPipeline([("tfidf", TfidfVectorizer(ngram_range=(1, 3), max_features=8000, analyzer="char_wb")),
-                                     ("clf", SGDClassifier(loss="hinge", max_iter=1000, random_state=42))])
-        pipeline_model.fit(texts, labels)
-
-        path = MODEL_DIR / f"model_{field}.pkl"
-        backup_path = MODEL_DIR / f"model_{field}_prev.pkl"
-        if path.exists():
-            shutil.copy2(path, backup_path)
-        with open(path, "wb") as f:
-            pickle.dump(pipeline_model, f)
-        self.nlp.models[field] = pipeline_model
-
-        # FASE 9: Versionamento
-        current_v = c.execute("SELECT MAX(version) FROM model_versions WHERE field=?", (field,)).fetchone()[0] or 0
-        new_v = current_v + 1
-        c.execute("UPDATE model_versions SET is_active=0 WHERE field=?", (field,))
-        c.execute("INSERT INTO model_versions (field, version, accuracy, samples_count, trained_at, is_active, notes) VALUES (?,?,?,?,?,1,?)",
-                  (field, new_v, new_accuracy, len(rows), datetime.now().isoformat(),
-                   f"Supervised. Old: {old_accuracy}, New: {new_accuracy}"))
-        conn.commit()
-        conn.close()
-
-        msg = f"Modello '{field}' v{new_v} — {len(rows)} campioni"
-        if new_accuracy: msg += f" (acc: {new_accuracy:.0%})"
-        if old_accuracy: msg += f" [prima: {old_accuracy:.0%}]"
-        return {"status": "ok", "message": msg, "field": field, "version": new_v,
-                "accuracy": new_accuracy, "old_accuracy": old_accuracy, "samples": len(rows)}
+    def get_ml_quality(self) -> dict:
+        """Report qualità dati e modelli."""
+        return ml.get_quality_report()
 
     def rollback_model(self, field: str) -> dict:
         """Rollback al modello precedente."""
@@ -956,6 +975,7 @@ class Pipeline:
             "trained_models": [{"field": m[0], "version": m[1], "accuracy": m[2], "samples": m[3],
                                 "trained_at": m[4], "is_active": bool(m[5])} for m in models],
             "loaded_ml_models": list(self.nlp.models.keys()),
+            "ml_engine": ml.get_status(),
         }
 
     def get_history(self) -> list:

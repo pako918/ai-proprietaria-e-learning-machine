@@ -489,71 +489,177 @@ const SECTIONS = [
   { title: "Identificativi", icon: "🔑", fields: [
     { key: 'cig', label: 'CIG', icon: '🔑', mono: true },
     { key: 'cup', label: 'CUP', icon: '📌', mono: true },
-    { key: 'cpv', label: 'Codice CPV', icon: '🗂', mono: true },
-    { key: 'nuts_code', label: 'Codice NUTS', icon: '🌍', mono: true },
-    { key: 'codice_progetto', label: 'Codice Progetto', icon: '🏷', mono: true },
+    { key: 'cui', label: 'CUI', icon: '🏷', mono: true },
+    { key: 'cpv_principale', label: 'CPV Principale', icon: '🗂', mono: true },
+    { key: 'codice_nuts', label: 'Codice NUTS', icon: '🌍', mono: true },
+    { key: 'determina_a_contrarre', label: 'Determina a Contrarre', icon: '📃' },
   ]},
-  { title: "Soggetti", icon: "🏛", fields: [
-    { key: 'stazione_appaltante', label: 'Stazione Appaltante', icon: '🏛', highlight: true },
-    { key: 'amministrazione_delegante', label: 'Amm. Delegante', icon: '🏢' },
-    { key: 'rup', label: 'RUP', icon: '👤' },
-    { key: 'responsabile_procedimento', label: 'Resp. Procedimento', icon: '👤' },
-    { key: 'direttore_esecuzione', label: 'Direttore Esecuzione', icon: '👤' },
-    { key: 'coordinatore_sicurezza', label: 'Coord. Sicurezza', icon: '👤' },
+  { title: "Suddivisione Lotti", icon: "📦", fields: [
+    { key: 'numero_lotti', label: 'Numero Lotti', icon: '📦', highlight: true },
+    { key: 'max_lotti_aggiudicabili', label: 'Max Lotti/Concorrente', icon: '🔢' },
+    { key: 'vincoli_lotti', label: 'Vincoli Partecipazione', icon: '🔗', fullWidth: true },
+  ]},
+  { title: "Stazione Appaltante e RUP", icon: "🏛", fields: [
+    { key: 'stazione_appaltante', label: 'Stazione Appaltante', icon: '🏛', highlight: true, fullWidth: true },
+    { key: 'tipo_ente', label: 'Tipo Ente', icon: '🏢' },
+    { key: 'sa_indirizzo', label: 'Indirizzo', icon: '📍' },
+    { key: 'sa_pec', label: 'PEC', icon: '📧', mono: true },
+    { key: 'sa_email', label: 'Email', icon: '✉️', mono: true },
+    { key: 'sa_telefono', label: 'Telefono', icon: '📞', mono: true },
+    { key: 'sa_sito_web', label: 'Sito Web', icon: '🌐' },
+    { key: 'rup', label: 'RUP', icon: '👤', highlight: true },
+    { key: 'rup_qualifica', label: 'Qualifica RUP', icon: '🎓' },
+    { key: 'rup_email', label: 'Email RUP', icon: '✉️', mono: true },
+    { key: 'rup_pec', label: 'PEC RUP', icon: '📧', mono: true },
   ]},
   { title: "Oggetto e Procedura", icon: "📋", fields: [
-    { key: 'oggetto_appalto', label: 'Oggetto Appalto', icon: '📋', highlight: true, fullWidth: true },
+    { key: 'oggetto_appalto', label: 'Oggetto', icon: '📋', highlight: true, fullWidth: true },
     { key: 'tipo_procedura', label: 'Tipo Procedura', icon: '⚖️' },
-    { key: 'criterio_aggiudicazione', label: 'Criterio Aggiudicazione', icon: '🎯', fullWidth: true },
-    { key: 'is_accordo_quadro', label: 'Accordo Quadro', icon: '📑', boolean: true },
-    { key: 'numero_lotti', label: 'Numero Lotti', icon: '📊' },
+    { key: 'criterio_aggiudicazione', label: 'Criterio Aggiudicazione', icon: '🏆' },
+    { key: 'metodo_oepv', label: 'Metodo OEPV', icon: '📊' },
+    { key: 'inversione_procedimentale', label: 'Inversione Proc.', icon: '🔄', boolean: true },
+    { key: 'accordo_quadro', label: 'Accordo Quadro', icon: '📑' },
+    { key: 'concessione', label: 'Concessione/PPP', icon: '🏗', boolean: true },
   ]},
-  { title: "Importi", icon: "💶", fields: [
-    { key: 'importo_totale', label: 'Importo Totale', icon: '💶', money: true },
-    { key: 'importo_base_gara', label: 'Base di Gara', icon: '💰', money: true },
+  { title: "Piattaforma Telematica", icon: "🌐", fields: [
+    { key: 'piattaforma_nome', label: 'Piattaforma', icon: '🌐', highlight: true },
+    { key: 'piattaforma_url', label: 'URL', icon: '🔗', fullWidth: true },
+  ]},
+  { title: "Importi Complessivi", icon: "💶", fields: [
+    { key: 'importo_totale_gara', label: 'Importo Totale Gara (complessivo)', icon: '💶', money: true, highlight: true },
+    { key: 'importo_soggetto_ribasso', label: 'Soggetto a Ribasso', icon: '💰', money: true },
     { key: 'oneri_sicurezza', label: 'Oneri Sicurezza', icon: '🛡', money: true },
     { key: 'costi_manodopera', label: 'Costi Manodopera', icon: '👷', money: true },
-    { key: 'garanzia_provvisoria', label: 'Garanzia Provvisoria', icon: '🔒', money: true },
-    { key: 'garanzia_definitiva', label: 'Garanzia Definitiva', icon: '🔒' },
-    { key: 'contributo_anac', label: 'Contributo ANAC', icon: '🏦', money: true },
-    { key: 'imposta_bollo', label: 'Imposta di Bollo', icon: '📄', money: true },
+    { key: 'quota_ribassabile_percentuale', label: 'Quota Ribassabile %', icon: '📉' },
     { key: 'anticipazione', label: 'Anticipazione', icon: '💸' },
+    { key: 'revisione_prezzi', label: 'Revisione Prezzi', icon: '📊' },
   ]},
-  { title: "Punteggi OEPV", icon: "⭐", fields: [
-    { key: 'punteggio_tecnica', label: 'Punti Tecnica', icon: '⭐' },
+  { title: "Durata Contratto", icon: "⏱", fields: [
+    { key: 'durata_contratto', label: 'Durata Totale', icon: '⏱', highlight: true },
+    { key: 'decorrenza', label: 'Decorrenza', icon: '📅' },
+    { key: 'fase_progettazione', label: 'Fase Progettazione', icon: '📐' },
+    { key: 'fase_lavori', label: 'Fase Lavori', icon: '🏗' },
+    { key: 'fase_gestione', label: 'Fase Gestione', icon: '🏢' },
+    { key: 'proroga', label: 'Proroga', icon: '🔄' },
+    { key: 'societa_di_scopo', label: 'Societa di Scopo', icon: '🏛' },
+  ]},
+  { title: "Tempistiche", icon: "📅", fields: [
+    { key: 'scadenza_offerte', label: 'Scadenza Offerte', icon: '📅', highlight: true },
+    { key: 'apertura_buste', label: 'Apertura Buste', icon: '📨' },
+    { key: 'scadenza_chiarimenti', label: 'Scadenza Chiarimenti', icon: '❓' },
+    { key: 'validita_offerta_giorni', label: 'Validita Offerta (gg)', icon: '📆' },
+    { key: 'termine_stipula_giorni', label: 'Termine Stipula (gg)', icon: '📝' },
+    { key: 'standstill_giorni', label: 'Standstill (gg)', icon: '⏸' },
+  ]},
+  { title: "Requisiti Partecipazione", icon: "📊", fields: [
+    { key: 'numero_figure_richieste', label: 'N. Figure Professionali', icon: '👥', highlight: true },
+    { key: 'figure_professionali', label: 'Figure Richieste', icon: '👤', isList: true, fullWidth: true },
+    { key: 'ruoli_cumulabili', label: 'Ruoli Cumulabili', icon: '🔄', boolean: true },
+    { key: 'obbligo_giovane', label: 'Giovane Professionista', icon: '🧑‍🎓', boolean: true },
+    { key: 'fatturato_globale_minimo', label: 'Fatturato Globale Min.', icon: '📈', money: true },
+    { key: 'fatturato_specifico_minimo', label: 'Fatturato Specifico Min.', icon: '📈', money: true },
+    { key: 'fatturato_periodo', label: 'Periodo Fatturato', icon: '📅' },
+    { key: 'copertura_assicurativa', label: 'Copertura Assicurativa', icon: '🔐', money: true },
+  ]},
+  { title: "Categorie e SOA", icon: "🏗", fields: [
+    { key: 'soa_richiesta', label: 'SOA Richiesta (Appalto Integrato)', icon: '🏗', boolean: true },
+    { key: 'soa_categorie', label: 'Categorie SOA', icon: '🏗', isList: true, fullWidth: true },
+    { key: 'categorie_opere', label: 'Categorie Opere con Importi', icon: '📐', isList: true, fullWidth: true },
+  ]},
+  { title: "Criteri Valutazione", icon: "⭐", fields: [
+    { key: 'punteggio_tecnica', label: 'Punti Tecnica', icon: '⭐', highlight: true },
     { key: 'punteggio_economica', label: 'Punti Economica', icon: '💰' },
-    { key: 'soglia_sbarramento_tecnica', label: 'Soglia Sbarramento', icon: '⛔' },
-    { key: 'pti_giovani_professionisti', label: 'Bonus Giovani Prof.', icon: '👨‍🎓' },
-    { key: 'pti_iso_9001', label: 'Bonus ISO 9001', icon: '📋' },
-    { key: 'pti_parita_genere', label: 'Bonus Parità Genere', icon: '⚖️' },
+    { key: 'soglia_sbarramento', label: 'Soglia Sbarramento', icon: '⛔' },
+    { key: 'riparametrazione', label: 'Riparametrazione', icon: '🔄', boolean: true },
+    { key: 'formula_economica', label: 'Formula Economica', icon: '📐', fullWidth: true },
+    { key: 'modalita_offerta', label: 'Modalita Offerta', icon: '📝' },
+    { key: 'cifre_decimali', label: 'Cifre Decimali', icon: '🔢' },
+    { key: 'verifica_anomalia', label: 'Verifica Anomalia', icon: '📉', boolean: true },
   ]},
-  { title: "Scadenze e Durata", icon: "📅", fields: [
-    { key: 'scadenza_offerte', label: 'Scadenza Offerte', icon: '📅' },
-    { key: 'termine_chiarimenti', label: 'Termine Chiarimenti', icon: '❓' },
-    { key: 'durata_contratto', label: 'Durata Contratto', icon: '⏱' },
-    { key: 'termine_esecuzione', label: 'Termine Esecuzione', icon: '🏁' },
-    { key: 'piattaforma_url', label: 'Piattaforma', icon: '🌐', fullWidth: true },
+  { title: "Offerta Tecnica Formato", icon: "📄", fields: [
+    { key: 'ot_formato_pagina', label: 'Formato Pagina', icon: '📄' },
+    { key: 'ot_carattere', label: 'Carattere', icon: '🔤' },
+    { key: 'ot_interlinea', label: 'Interlinea', icon: '📏' },
+    { key: 'ot_limite_pagine', label: 'Limite Pagine', icon: '📑' },
   ]},
-  { title: "Requisiti e Categorie", icon: "📊", fields: [
-    { key: 'fatturato_minimo', label: 'Fatturato Minimo', icon: '📈', money: true },
-    { key: 'periodo_requisiti_anni', label: 'Periodo Requisiti', icon: '📅' },
-    { key: 'polizza_professionale', label: 'Polizza Professionale', icon: '🔐' },
-    { key: 'requisiti_soa', label: 'Requisiti SOA', icon: '🏗' },
-    { key: 'categorie_ingegneria', label: 'Categorie Ingegneria', icon: '🏗', isList: true },
+  { title: "Garanzie", icon: "🔒", fields: [
+    { key: 'gar_provvisoria_dovuta', label: 'Provvisoria Dovuta', icon: '🔒', boolean: true },
+    { key: 'gar_provvisoria_percentuale', label: 'Provvisoria %', icon: '🔒' },
+    { key: 'gar_provvisoria_importo', label: 'Provvisoria Importo', icon: '🔒', money: true },
+    { key: 'gar_provvisoria_durata', label: 'Provvisoria Durata (gg)', icon: '📅' },
+    { key: 'gar_definitiva_percentuale', label: 'Definitiva %', icon: '🔒' },
+    { key: 'gar_definitiva_forma', label: 'Definitiva Forma', icon: '📝' },
+    { key: 'polizza_rc', label: 'Polizza RC Prof.', icon: '🔐', boolean: true },
+    { key: 'polizza_rc_copertura', label: 'Copertura RC', icon: '🔐', fullWidth: true },
   ]},
-  { title: "Condizioni e Clausole", icon: "📝", fields: [
-    { key: 'subappalto', label: 'Subappalto', icon: '🔗', fullWidth: true },
-    { key: 'avvalimento', label: 'Avvalimento', icon: '🤝', fullWidth: true },
-    { key: 'penali', label: 'Penali', icon: '⚠️', fullWidth: true },
-    { key: 'modalita_pagamento', label: 'Modalità Pagamento', icon: '💳', fullWidth: true },
-    { key: 'verifica_anomalia', label: 'Verifica Anomalia', icon: '📉', fullWidth: true },
+  { title: "Subappalto e Avvalimento", icon: "🤝", fields: [
+    { key: 'subappalto_ammesso', label: 'Subappalto Ammesso', icon: '🔗', boolean: true },
+    { key: 'subappalto_limite', label: 'Limite Subappalto %', icon: '📊' },
+    { key: 'subappalto_condizioni', label: 'Condizioni Sub.', icon: '📝', fullWidth: true },
+    { key: 'avvalimento_ammesso', label: 'Avvalimento Ammesso', icon: '🤝', boolean: true },
+    { key: 'avvalimento_condizioni', label: 'Condizioni Avv.', icon: '📝', fullWidth: true },
+  ]},
+  { title: "Sopralluogo", icon: "🚶", fields: [
+    { key: 'sopralluogo_obbligatorio', label: 'Obbligatorio', icon: '🚶', boolean: true },
+    { key: 'sopralluogo_modalita', label: 'Modalita', icon: '📝' },
+    { key: 'sopralluogo_contatti', label: 'Contatti', icon: '📞' },
+    { key: 'sopralluogo_termine', label: 'Termine', icon: '📅' },
+  ]},
+  { title: "Documentazione Amministrativa", icon: "📁", fields: [
+    { key: 'dgue_richiesto', label: 'DGUE Richiesto', icon: '📋', boolean: true },
+    { key: 'contributo_anac', label: 'Contributo ANAC', icon: '🏦', money: true },
+    { key: 'imposta_bollo', label: 'Imposta Bollo', icon: '📄', money: true },
+    { key: 'numero_documenti', label: 'N. Documenti Richiesti', icon: '📁' },
+  ]},
+  { title: "Soccorso Istruttorio", icon: "📋", fields: [
+    { key: 'soccorso_ammesso', label: 'Ammesso', icon: '📋', boolean: true },
+    { key: 'soccorso_termine_giorni', label: 'Termine (giorni)', icon: '📅' },
+    { key: 'soccorso_riferimento', label: 'Riferimento', icon: '📕' },
+  ]},
+  { title: "Cause Esclusione", icon: "⛔", fields: [
+    { key: 'esclusione_automatiche', label: 'Automatiche (art.94)', icon: '⛔' },
+    { key: 'esclusione_non_automatiche', label: 'Non Automatiche (art.95)', icon: '⚠️' },
+    { key: 'self_cleaning', label: 'Self-Cleaning', icon: '🧹', boolean: true },
+  ]},
+  { title: "Aggiudicazione e Stipula", icon: "✅", fields: [
+    { key: 'max_lotti_concorrente', label: 'Max Lotti/Concorrente', icon: '🔢' },
+    { key: 'stipula_forma', label: 'Forma Contratto', icon: '📝' },
+    { key: 'stipula_standstill', label: 'Standstill (gg)', icon: '⏸' },
+    { key: 'esecuzione_anticipata', label: 'Esecuzione Anticipata', icon: '⚡', boolean: true },
+  ]},
+  { title: "Penali", icon: "⚠️", fields: [
+    { key: 'penali_previste', label: 'Previste', icon: '⚠️', boolean: true },
+    { key: 'penali_percentuale', label: '% Giornaliera', icon: '📊' },
+    { key: 'penali_tetto', label: 'Tetto Massimo %', icon: '🔝' },
+    { key: 'penali_descrizione', label: 'Descrizione', icon: '📝', fullWidth: true },
+  ]},
+  { title: "Sicurezza", icon: "🛡", fields: [
+    { key: 'sicurezza_oneri', label: 'Oneri Sicurezza Interf.', icon: '🛡', money: true },
+    { key: 'duvri_richiesto', label: 'DUVRI Richiesto', icon: '📋', boolean: true },
+    { key: 'duvri_nota', label: 'Nota DUVRI', icon: '📝', fullWidth: true },
+  ]},
+  { title: "CAM Criteri Ambientali", icon: "🌿", fields: [
+    { key: 'cam_applicabili', label: 'CAM Applicabili', icon: '🌿', boolean: true },
+    { key: 'cam_decreto', label: 'Decreto Riferimento', icon: '📕' },
+    { key: 'cam_requisiti', label: 'Requisiti Minimi', icon: '📝', fullWidth: true },
+  ]},
+  { title: "Controversie", icon: "⚖️", fields: [
+    { key: 'foro_competente', label: 'Foro Competente', icon: '⚖️' },
+    { key: 'termine_ricorso_giorni', label: 'Termine Ricorso (gg)', icon: '📅' },
+    { key: 'arbitrato', label: 'Arbitrato', icon: '⚖️' },
+    { key: 'collegio_consultivo', label: 'Collegio Consultivo', icon: '🏛', boolean: true },
+  ]},
+  { title: "Informazioni Aggiuntive", icon: "ℹ️", fields: [
+    { key: 'tracciabilita_flussi', label: 'Tracciabilita Flussi', icon: '🔍', boolean: true },
+    { key: 'natura_servizio', label: 'Natura Servizio', icon: '📝' },
+    { key: 'codice_comportamento', label: 'Codice Comportamento', icon: '📜', boolean: true },
     { key: 'finanziamento', label: 'Fonte Finanziamento', icon: '🇪🇺' },
-    { key: 'revisione_prezzi', label: 'Revisione Prezzi', icon: '📊', boolean: true },
-    { key: 'conformita_cam', label: 'Conformità CAM', icon: '🌿', boolean: true },
-    { key: 'inversione_procedimentale', label: 'Inversione Proc.', icon: '🔄', boolean: true },
-    { key: 'soccorso_istruttorio', label: 'Soccorso Istruttorio', icon: '📋', boolean: true },
-    { key: 'clausola_sociale', label: 'Clausola Sociale', icon: '🤝', boolean: true },
-    { key: 'sopralluogo_obbligatorio', label: 'Sopralluogo Obbl.', icon: '🚶', boolean: true },
+    { key: 'fonti_finanziamento', label: 'Fonti Finanziamento', icon: '💰', isList: true },
+    { key: 'ccnl', label: 'CCNL Applicabile', icon: '📑', fullWidth: true },
+    { key: 'commissione_giudicatrice', label: 'Commissione Giudicatrice', icon: '👥' },
+    { key: 'pnrr_giovani', label: 'Quota Giovani PNRR %', icon: '🧑‍🎓' },
+    { key: 'pnrr_donne', label: 'Quota Donne PNRR %', icon: '👩' },
+    { key: 'dnsh', label: 'Principio DNSH', icon: '♻️', boolean: true },
   ]},
 ];
 
@@ -809,8 +915,18 @@ function showResults(data, filename) {
   if(data.lotti&&data.lotti.length>0){
     const sec=document.createElement('div'); sec.className='result-section';
     sec.innerHTML='<div class="section-header">📦 Dettaglio Lotti</div>';
-    let h=`<div class="result-card full-width"><table class="lotti-table"><thead><tr><th>#</th><th>CIG</th><th>Importo</th><th>Descrizione</th></tr></thead><tbody>`;
-    data.lotti.forEach(l=>{ h+=`<tr><td><strong>Lotto ${l.numero}</strong></td><td style="font-family:var(--font-m)">${l.cig||'—'}</td><td style="color:var(--ok);font-family:var(--font-m)">${l.importo||'—'}</td><td style="font-size:0.8rem">${l.descrizione||'—'}</td></tr>`; });
+    let h=`<div class="result-card full-width"><table class="lotti-table"><thead><tr><th>#</th><th>CIG</th><th>CUP</th><th>Importo</th><th>Oneri Sic.</th><th>Durata</th><th>Descrizione</th></tr></thead><tbody>`;
+    data.lotti.forEach(l=>{
+      const cig = l.CIG || l.cig || '—';
+      const cup = l.CUP || l.cup || '—';
+      const importo = l.importo_base_asta || l.importo || '—';
+      const oneri = l.oneri_sicurezza || '—';
+      const dur_obj = l.durata_esecuzione || {};
+      const durata = dur_obj.giorni ? dur_obj.giorni+' gg' : dur_obj.mesi ? dur_obj.mesi+' mesi' : dur_obj.anni ? dur_obj.anni+' anni' : '—';
+      const desc = l.denominazione || l.descrizione || '—';
+      const num = l.numero || '?';
+      h+=`<tr><td><strong>Lotto ${num}</strong></td><td style="font-family:var(--font-m)">${cig}</td><td style="font-family:var(--font-m)">${cup}</td><td style="color:var(--ok);font-family:var(--font-m)">${typeof importo==='number'?'EUR '+importo.toLocaleString('it-IT',{minimumFractionDigits:2}):importo}</td><td style="font-family:var(--font-m)">${typeof oneri==='number'?'EUR '+oneri.toLocaleString('it-IT',{minimumFractionDigits:2}):oneri}</td><td>${durata}</td><td style="font-size:0.8rem">${desc}</td></tr>`;
+    });
     h+='</tbody></table></div>';
     const w=document.createElement('div'); w.className='result-grid'; w.innerHTML=h;
     sec.appendChild(w); container.appendChild(sec);
