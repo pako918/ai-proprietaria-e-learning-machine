@@ -6,13 +6,15 @@ Supporta campi dinamici (custom) persistiti in SQLite.
 
 import re
 import json
-import sqlite3
-from pathlib import Path
 from dataclasses import dataclass, field, asdict
 from typing import Optional, Callable, List, Dict, Any
 from datetime import datetime
 
-DB_PATH = Path(__file__).parent / "data" / "learning.db"
+from config import DB_PATH
+from database import get_connection, init_custom_fields_table
+from log_config import get_logger
+
+logger = get_logger("field_registry")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -384,40 +386,14 @@ class FieldRegistry:
     def __init__(self):
         self._builtin: Dict[str, FieldDef] = {f.key: f for f in BUILTIN_FIELDS}
         self._custom: Dict[str, FieldDef] = {}
-        self._init_db()
+        init_custom_fields_table()
         self._load_custom_fields()
-
-    def _init_db(self):
-        """Crea tabella per campi custom se non esiste."""
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS custom_fields (
-                key TEXT PRIMARY KEY,
-                label TEXT NOT NULL,
-                icon TEXT DEFAULT '📋',
-                category TEXT DEFAULT 'Custom',
-                field_type TEXT DEFAULT 'text',
-                mono INTEGER DEFAULT 0,
-                highlight INTEGER DEFAULT 0,
-                full_width INTEGER DEFAULT 0,
-                patterns TEXT DEFAULT '[]',
-                validator_type TEXT DEFAULT 'text',
-                description TEXT DEFAULT '',
-                extraction_hint TEXT DEFAULT '',
-                created_at TEXT,
-                updated_at TEXT
-            )
-        """)
-        conn.commit()
-        conn.close()
 
     def _load_custom_fields(self):
         """Carica campi custom dal database."""
         try:
-            conn = sqlite3.connect(str(DB_PATH))
-            rows = conn.execute("SELECT * FROM custom_fields").fetchall()
-            conn.close()
+            with get_connection(readonly=True) as conn:
+                rows = conn.execute("SELECT * FROM custom_fields").fetchall()
             for r in rows:
                 fd = FieldDef(
                     key=r[0], label=r[1], icon=r[2] or "📋",
@@ -499,20 +475,18 @@ class FieldRegistry:
         )
 
         now = datetime.now().isoformat()
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("""
-            INSERT OR REPLACE INTO custom_fields
-            (key, label, icon, category, field_type, mono, highlight, full_width,
-             patterns, validator_type, description, extraction_hint, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-        """, (
-            fd.key, fd.label, fd.icon, fd.category, fd.field_type,
-            int(fd.mono), int(fd.highlight), int(fd.full_width),
-            json.dumps(fd.patterns), fd.validator_type,
-            fd.description, fd.extraction_hint, now, now,
-        ))
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO custom_fields
+                (key, label, icon, category, field_type, mono, highlight, full_width,
+                 patterns, validator_type, description, extraction_hint, created_at, updated_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                fd.key, fd.label, fd.icon, fd.category, fd.field_type,
+                int(fd.mono), int(fd.highlight), int(fd.full_width),
+                json.dumps(fd.patterns), fd.validator_type,
+                fd.description, fd.extraction_hint, now, now,
+            ))
         self._custom[fd.key] = fd
         return fd
 
@@ -530,30 +504,26 @@ class FieldRegistry:
             fd.patterns = data["patterns"]
 
         now = datetime.now().isoformat()
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("""
-            UPDATE custom_fields SET label=?, icon=?, category=?, field_type=?,
-            mono=?, highlight=?, full_width=?, patterns=?, validator_type=?,
-            description=?, extraction_hint=?, updated_at=?
-            WHERE key=?
-        """, (
-            fd.label, fd.icon, fd.category, fd.field_type,
-            int(fd.mono), int(fd.highlight), int(fd.full_width),
-            json.dumps(fd.patterns), fd.validator_type,
-            fd.description, fd.extraction_hint, now, key,
-        ))
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute("""
+                UPDATE custom_fields SET label=?, icon=?, category=?, field_type=?,
+                mono=?, highlight=?, full_width=?, patterns=?, validator_type=?,
+                description=?, extraction_hint=?, updated_at=?
+                WHERE key=?
+            """, (
+                fd.label, fd.icon, fd.category, fd.field_type,
+                int(fd.mono), int(fd.highlight), int(fd.full_width),
+                json.dumps(fd.patterns), fd.validator_type,
+                fd.description, fd.extraction_hint, now, key,
+            ))
         return fd
 
     def delete_custom_field(self, key: str) -> bool:
         """Elimina un campo custom."""
         if key not in self._custom:
             return False
-        conn = sqlite3.connect(str(DB_PATH))
-        conn.execute("DELETE FROM custom_fields WHERE key=?", (key,))
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute("DELETE FROM custom_fields WHERE key=?", (key,))
         del self._custom[key]
         return True
 

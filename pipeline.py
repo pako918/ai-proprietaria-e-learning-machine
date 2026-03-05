@@ -26,12 +26,17 @@ import json
 import pickle
 import re
 import shutil
-import sqlite3
 import time
 from datetime import datetime
-from pathlib import Path
 from typing import Optional, Dict, List, Tuple, Any
 
+from config import BASE_DIR, DATA_DIR, MODEL_DIR, DB_PATH
+from database import get_connection, init_main_tables
+from utils import (
+    clean_string, normalize_amount, parse_number_word,
+    find_value_context, first_match, all_matches, extract_int,
+)
+from log_config import get_logger
 from field_registry import registry, get_validator
 from pdf_parser import parse_pdf, get_text_with_tables, get_page_for_text, ParsedDocument
 from schemas import full_validation
@@ -42,12 +47,7 @@ from extract_disciplinari import (
     extract_text_from_pdf as disciplinari_parse_pdf,
 )
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-MODEL_DIR = BASE_DIR / "models"
-DB_PATH = DATA_DIR / "learning.db"
-DATA_DIR.mkdir(exist_ok=True)
-MODEL_DIR.mkdir(exist_ok=True)
+logger = get_logger("pipeline")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -62,27 +62,26 @@ def compute_hash(content: bytes | str) -> str:
 
 def check_duplicate(text_hash: str) -> Optional[dict]:
     try:
-        conn = sqlite3.connect(str(DB_PATH))
-        row = conn.execute(
-            "SELECT id, filename, extracted_json, corrected_json "
-            "FROM documents WHERE text_hash=? ORDER BY upload_date DESC LIMIT 1",
-            (text_hash,)
-        ).fetchone()
-        conn.close()
-        if row and row[2]:
-            result = json.loads(row[2])
-            result["_cached"] = True
-            result["_cached_doc_id"] = row[0]
-            result["_cached_filename"] = row[1]
-            if row[3]:
-                corrected = json.loads(row[3])
-                for k, v in corrected.items():
-                    if v is not None:
-                        result[k] = v
-                        result.setdefault("_methods", {})[k] = "corrected"
-            return result
+        with get_connection(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT id, filename, extracted_json, corrected_json "
+                "FROM documents WHERE text_hash=? ORDER BY upload_date DESC LIMIT 1",
+                (text_hash,)
+            ).fetchone()
+            if row and row[2]:
+                result = json.loads(row[2])
+                result["_cached"] = True
+                result["_cached_doc_id"] = row[0]
+                result["_cached_filename"] = row[1]
+                if row[3]:
+                    corrected = json.loads(row[3])
+                    for k, v in corrected.items():
+                        if v is not None:
+                            result[k] = v
+                            result.setdefault("_methods", {})[k] = "corrected"
+                return result
     except Exception:
-        pass
+        logger.warning("Errore check_duplicate per hash %s", text_hash[:16], exc_info=True)
     return None
 
 
@@ -100,72 +99,27 @@ class RulesExtractor:
     def reload_patterns(self):
         self._patterns = registry.get_patterns()
 
-    # ── Utility ────────────────────────────────────────────────────
+    # ── Utility (delegano a utils.py per evitare duplicazione) ────
 
     @staticmethod
     def clean(s: str) -> str:
-        if not s:
-            return s
-        s = re.sub(r'\s+', ' ', s).strip()
-        s = re.sub(r'[,;:\s]+$', '', s)
-        return s
+        return clean_string(s)
 
     @staticmethod
     def normalize_amount(raw) -> Optional[str]:
-        if not raw:
-            return None
-        raw = str(raw).strip().replace("EUR", "").replace("€", "").strip()
-        if re.search(r'\d{1,3}(?:\.\d{3})+,\d{2}', raw):
-            raw = raw.replace(".", "").replace(",", ".")
-        elif re.search(r'\d{1,3}(?:,\d{3})+\.\d{2}', raw):
-            raw = raw.replace(",", "")
-        else:
-            raw = raw.replace(",", ".")
-        try:
-            num = float(re.sub(r'[^\d.]', '', raw))
-            return f"€ {num:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        except Exception:
-            return raw
+        return normalize_amount(raw)
 
     def first_match(self, text: str, patterns: list) -> Optional[str]:
-        for pat in patterns:
-            try:
-                m = re.search(pat, text, re.I | re.M)
-                if m:
-                    return self.clean(m.group(1) if m.lastindex else m.group(0))
-            except Exception:
-                continue
-        return None
+        return first_match(text, patterns)
 
     def all_matches(self, text: str, patterns: list) -> list:
-        found = []
-        for pat in patterns:
-            try:
-                found.extend(re.findall(pat, text, re.I | re.M))
-            except Exception:
-                continue
-        return list(dict.fromkeys([self.clean(x) for x in found if x]))
+        return all_matches(text, patterns)
 
     def extract_int(self, text: str, patterns: list) -> Optional[int]:
-        val = self.first_match(text, patterns)
-        if val:
-            try:
-                return int(re.sub(r'\D', '', val))
-            except Exception:
-                return None
-        return None
+        return extract_int(text, patterns)
 
     def parse_number_word(self, s) -> Optional[int]:
-        if not s:
-            return None
-        mapping = {"due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6}
-        sl = s.strip().lower()
-        if sl in mapping:
-            return mapping[sl]
-        try:
-            return int(re.sub(r'\D', '', s))
-        except Exception:
-            return None
+        return parse_number_word(s)
 
     # ── Estrazioni complesse ───────────────────────────────────────
 
@@ -181,8 +135,8 @@ class RulesExtractor:
                 lotti.append({
                     "numero": int(n),
                     "cig": cig_m.group(1) if cig_m else None,
-                    "importo": self.normalize_amount(imp_m.group(1)) if imp_m else None,
-                    "descrizione": self.clean(desc_m.group(1))[:200] if desc_m else None,
+                    "importo": normalize_amount(imp_m.group(1)) if imp_m else None,
+                    "descrizione": clean_string(desc_m.group(1))[:200] if desc_m else None,
                 })
         return lotti
 
@@ -513,67 +467,7 @@ class Pipeline:
         self.rules = RulesExtractor()
         self.nlp = NLPClassifier()
         self._last_parsed: Dict[str, ParsedDocument] = {}
-        self._init_db()
-
-    def _init_db(self):
-        DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        c.executescript("""
-            CREATE TABLE IF NOT EXISTS documents (
-                id TEXT PRIMARY KEY,
-                filename TEXT,
-                text_hash TEXT,
-                full_text TEXT,
-                upload_date TEXT,
-                extracted_json TEXT,
-                corrected_json TEXT,
-                model_version TEXT,
-                score REAL DEFAULT 0,
-                feedback TEXT
-            );
-            CREATE TABLE IF NOT EXISTS training_samples (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                field TEXT NOT NULL,
-                text_snippet TEXT NOT NULL,
-                correct_value TEXT NOT NULL,
-                wrong_value TEXT,
-                source TEXT DEFAULT 'manual',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE TABLE IF NOT EXISTS model_versions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                field TEXT,
-                version INTEGER,
-                accuracy REAL,
-                samples_count INTEGER,
-                trained_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                is_active INTEGER DEFAULT 1,
-                notes TEXT
-            );
-            CREATE TABLE IF NOT EXISTS feedback_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                doc_id TEXT,
-                field TEXT,
-                original TEXT,
-                corrected TEXT,
-                timestamp TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        # Migrazioni sicure
-        for col, tbl, ctype in [
-            ('full_text', 'documents', 'TEXT'),
-            ('model_version', 'documents', 'TEXT'),
-            ('source', 'training_samples', 'TEXT DEFAULT "manual"'),
-            ('is_active', 'model_versions', 'INTEGER DEFAULT 1'),
-            ('notes', 'model_versions', 'TEXT'),
-        ]:
-            try:
-                c.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype}")
-            except Exception:
-                pass
-        conn.commit()
-        conn.close()
+        init_main_tables()
 
     # ═══════════════════════════════════════════════════════════════
     # FASI 1-6: Estrazione completa
@@ -775,32 +669,37 @@ class Pipeline:
                           corrected: str, snippet: str = "") -> dict:
         """Registra correzione → annotated training example.
         NON attiva auto-training. Solo salva nel dataset."""
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        row_text = c.execute("SELECT full_text FROM documents WHERE id=?", (doc_id,)).fetchone()
-        full_text = row_text[0] if row_text and row_text[0] else ""
-        training_snippet = snippet
-        if full_text:
-            ctx = _find_value_context(full_text, corrected, window=500)
-            if ctx and len(ctx) > 20:
-                training_snippet = ctx
-            elif original:
-                ctx = _find_value_context(full_text, original, window=500)
+        with get_connection() as conn:
+            c = conn.cursor()
+            row_text = c.execute("SELECT full_text FROM documents WHERE id=?", (doc_id,)).fetchone()
+            full_text = row_text[0] if row_text and row_text[0] else ""
+            training_snippet = snippet
+            if full_text:
+                ctx = find_value_context(full_text, corrected, window=500)
                 if ctx and len(ctx) > 20:
                     training_snippet = ctx
-        if not training_snippet:
-            training_snippet = full_text[:1500]
-        c.execute("INSERT INTO feedback_log (doc_id, field, original, corrected) VALUES (?,?,?,?)",
-                  (doc_id, field, original, corrected))
-        c.execute("INSERT INTO training_samples (field, text_snippet, correct_value, wrong_value, source) VALUES (?,?,?,?,?)",
-                  (field, training_snippet[:2000], corrected, original, "correction"))
-        row = c.execute("SELECT corrected_json FROM documents WHERE id=?", (doc_id,)).fetchone()
-        cd = json.loads(row[0]) if row and row[0] else {}
-        cd[field] = corrected
-        c.execute("UPDATE documents SET corrected_json=? WHERE id=?",
-                  (json.dumps(cd, ensure_ascii=False), doc_id))
-        conn.commit()
-        conn.close()
+                elif original:
+                    ctx = find_value_context(full_text, original, window=500)
+                    if ctx and len(ctx) > 20:
+                        training_snippet = ctx
+            if not training_snippet:
+                training_snippet = full_text[:1500]
+            c.execute(
+                "INSERT INTO feedback_log (doc_id, field, original, corrected) VALUES (?,?,?,?)",
+                (doc_id, field, original, corrected),
+            )
+            c.execute(
+                "INSERT INTO training_samples (field, text_snippet, correct_value, wrong_value, source) "
+                "VALUES (?,?,?,?,?)",
+                (field, training_snippet[:2000], corrected, original, "correction"),
+            )
+            row = c.execute("SELECT corrected_json FROM documents WHERE id=?", (doc_id,)).fetchone()
+            cd = json.loads(row[0]) if row and row[0] else {}
+            cd[field] = corrected
+            c.execute(
+                "UPDATE documents SET corrected_json=? WHERE id=?",
+                (json.dumps(cd, ensure_ascii=False), doc_id),
+            )
 
         # Feed correzione al ML Engine — dati di alta qualità
         try:
@@ -862,12 +761,13 @@ class Pipeline:
         shutil.copy2(backup, path)
         with open(path, "rb") as f:
             self.nlp.models[field] = pickle.load(f)
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        c.execute("UPDATE model_versions SET is_active=0 WHERE field=?", (field,))
-        c.execute("UPDATE model_versions SET is_active=1 WHERE field=? AND id=(SELECT MAX(id)-1 FROM model_versions WHERE field=?)", (field, field))
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute("UPDATE model_versions SET is_active=0 WHERE field=?", (field,))
+            conn.execute(
+                "UPDATE model_versions SET is_active=1 "
+                "WHERE field=? AND id=(SELECT MAX(id)-1 FROM model_versions WHERE field=?)",
+                (field, field),
+            )
         return {"status": "ok", "message": f"Rollback '{field}' completato"}
 
     # ═══════════════════════════════════════════════════════════════
@@ -875,21 +775,27 @@ class Pipeline:
     # ═══════════════════════════════════════════════════════════════
 
     def get_model_versions(self, field: str = None) -> list:
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        if field:
-            rows = c.execute("SELECT field, version, accuracy, samples_count, trained_at, is_active, notes FROM model_versions WHERE field=? ORDER BY version DESC", (field,)).fetchall()
-        else:
-            rows = c.execute("SELECT field, version, accuracy, samples_count, trained_at, is_active, notes FROM model_versions ORDER BY trained_at DESC").fetchall()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            if field:
+                rows = conn.execute(
+                    "SELECT field, version, accuracy, samples_count, trained_at, is_active, notes "
+                    "FROM model_versions WHERE field=? ORDER BY version DESC", (field,)
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT field, version, accuracy, samples_count, trained_at, is_active, notes "
+                    "FROM model_versions ORDER BY trained_at DESC"
+                ).fetchall()
         return [{"field": r[0], "version": r[1], "accuracy": r[2], "samples": r[3],
                  "trained_at": r[4], "is_active": bool(r[5]), "notes": r[6]} for r in rows]
 
     def _get_active_model_version(self) -> str:
-        conn = sqlite3.connect(str(DB_PATH))
-        rows = conn.execute("SELECT field, version FROM model_versions WHERE is_active=1").fetchall()
-        conn.close()
-        if not rows: return "rules-only"
+        with get_connection(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT field, version FROM model_versions WHERE is_active=1"
+            ).fetchall()
+        if not rows:
+            return "rules-only"
         return ", ".join(f"{r[0]}:v{r[1]}" for r in rows)
 
     # ═══════════════════════════════════════════════════════════════
@@ -897,63 +803,91 @@ class Pipeline:
     # ═══════════════════════════════════════════════════════════════
 
     def get_corrections(self, limit: int = 200) -> list:
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        rows = c.execute("""
-            SELECT f.id, f.doc_id, f.field, f.original, f.corrected, f.timestamp,
-                   t.id as sample_id, t.text_snippet
-            FROM feedback_log f
-            LEFT JOIN training_samples t ON t.field = f.field AND t.correct_value = f.corrected AND t.wrong_value = f.original
-            ORDER BY f.timestamp DESC LIMIT ?
-        """, (limit,)).fetchall()
-        corrections = []
-        seen = set()
-        for r in rows:
-            key = (r[0], r[6])
-            if key in seen: continue
-            seen.add(key)
-            corrections.append({"id": r[0], "doc_id": r[1], "field": r[2], "original": r[3],
-                                "corrected": r[4], "timestamp": r[5], "sample_id": r[6], "snippet": (r[7] or "")[:300]})
-        manual = c.execute("""
-            SELECT t.id, t.field, t.text_snippet, t.correct_value, t.wrong_value, t.created_at, t.source
-            FROM training_samples t WHERE NOT EXISTS (SELECT 1 FROM feedback_log f WHERE f.field=t.field AND f.corrected=t.correct_value)
-            ORDER BY t.created_at DESC LIMIT ?
-        """, (limit,)).fetchall()
-        for r in manual:
-            corrections.append({"id": None, "doc_id": None, "field": r[1], "original": r[4] or "",
-                                "corrected": r[3], "timestamp": r[5], "sample_id": r[0],
-                                "snippet": (r[2] or "")[:300], "source": r[6] or "training_sample"})
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            c = conn.cursor()
+            rows = c.execute("""
+                SELECT f.id, f.doc_id, f.field, f.original, f.corrected, f.timestamp,
+                       t.id as sample_id, t.text_snippet
+                FROM feedback_log f
+                LEFT JOIN training_samples t
+                    ON t.field = f.field AND t.correct_value = f.corrected AND t.wrong_value = f.original
+                ORDER BY f.timestamp DESC LIMIT ?
+            """, (limit,)).fetchall()
+            corrections = []
+            seen = set()
+            for r in rows:
+                key = (r[0], r[6])
+                if key in seen:
+                    continue
+                seen.add(key)
+                corrections.append({
+                    "id": r[0], "doc_id": r[1], "field": r[2], "original": r[3],
+                    "corrected": r[4], "timestamp": r[5], "sample_id": r[6],
+                    "snippet": (r[7] or "")[:300],
+                })
+            manual = c.execute("""
+                SELECT t.id, t.field, t.text_snippet, t.correct_value, t.wrong_value, t.created_at, t.source
+                FROM training_samples t
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM feedback_log f
+                    WHERE f.field=t.field AND f.corrected=t.correct_value
+                )
+                ORDER BY t.created_at DESC LIMIT ?
+            """, (limit,)).fetchall()
+            for r in manual:
+                corrections.append({
+                    "id": None, "doc_id": None, "field": r[1], "original": r[4] or "",
+                    "corrected": r[3], "timestamp": r[5], "sample_id": r[0],
+                    "snippet": (r[2] or "")[:300], "source": r[6] or "training_sample",
+                })
         corrections.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
         return corrections[:limit]
 
     def update_correction(self, correction_id=None, sample_id=None, data=None) -> dict:
-        if not data: return {"status": "error", "message": "Nessun dato"}
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor(); updated = 0
-        nc = data.get("corrected"); nf = data.get("field"); ns = data.get("snippet")
-        if correction_id:
-            if nc: c.execute("UPDATE feedback_log SET corrected=? WHERE id=?", (nc, correction_id)); updated += 1
-            if nf: c.execute("UPDATE feedback_log SET field=? WHERE id=?", (nf, correction_id))
-        if sample_id:
-            if nc: c.execute("UPDATE training_samples SET correct_value=? WHERE id=?", (nc, sample_id)); updated += 1
-            if ns: c.execute("UPDATE training_samples SET text_snippet=? WHERE id=?", (ns[:2000], sample_id))
-            if nf: c.execute("UPDATE training_samples SET field=? WHERE id=?", (nf, sample_id))
-        conn.commit(); conn.close()
+        if not data:
+            return {"status": "error", "message": "Nessun dato"}
+        nc = data.get("corrected")
+        nf = data.get("field")
+        ns = data.get("snippet")
+        updated = 0
+        with get_connection() as conn:
+            c = conn.cursor()
+            if correction_id:
+                if nc:
+                    c.execute("UPDATE feedback_log SET corrected=? WHERE id=?", (nc, correction_id))
+                    updated += 1
+                if nf:
+                    c.execute("UPDATE feedback_log SET field=? WHERE id=?", (nf, correction_id))
+            if sample_id:
+                if nc:
+                    c.execute("UPDATE training_samples SET correct_value=? WHERE id=?", (nc, sample_id))
+                    updated += 1
+                if ns:
+                    c.execute("UPDATE training_samples SET text_snippet=? WHERE id=?", (ns[:2000], sample_id))
+                if nf:
+                    c.execute("UPDATE training_samples SET field=? WHERE id=?", (nf, sample_id))
         return {"status": "ok", "updated": updated}
 
     def delete_correction(self, correction_id=None, sample_id=None) -> dict:
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor(); deleted = 0
-        if correction_id:
-            row = c.execute("SELECT field, corrected, original FROM feedback_log WHERE id=?", (correction_id,)).fetchone()
-            if row:
-                c.execute("DELETE FROM feedback_log WHERE id=?", (correction_id,))
-                c.execute("DELETE FROM training_samples WHERE field=? AND correct_value=? AND (wrong_value=? OR wrong_value IS NULL)", row)
+        deleted = 0
+        with get_connection() as conn:
+            c = conn.cursor()
+            if correction_id:
+                row = c.execute(
+                    "SELECT field, corrected, original FROM feedback_log WHERE id=?",
+                    (correction_id,),
+                ).fetchone()
+                if row:
+                    c.execute("DELETE FROM feedback_log WHERE id=?", (correction_id,))
+                    c.execute(
+                        "DELETE FROM training_samples "
+                        "WHERE field=? AND correct_value=? AND (wrong_value=? OR wrong_value IS NULL)",
+                        row,
+                    )
+                    deleted += 1
+            if sample_id:
+                c.execute("DELETE FROM training_samples WHERE id=?", (sample_id,))
                 deleted += 1
-        if sample_id:
-            c.execute("DELETE FROM training_samples WHERE id=?", (sample_id,)); deleted += 1
-        conn.commit(); conn.close()
         return {"status": "ok", "deleted": deleted}
 
     # ═══════════════════════════════════════════════════════════════
@@ -961,94 +895,108 @@ class Pipeline:
     # ═══════════════════════════════════════════════════════════════
 
     def get_stats(self) -> dict:
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        docs = c.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
-        corrections = c.execute("SELECT COUNT(*) FROM feedback_log").fetchone()[0]
-        samples = c.execute("SELECT field, COUNT(*) FROM training_samples GROUP BY field").fetchall()
-        models = c.execute("SELECT field, version, accuracy, samples_count, trained_at, is_active FROM model_versions ORDER BY trained_at DESC").fetchall()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            c = conn.cursor()
+            docs = c.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+            corrections = c.execute("SELECT COUNT(*) FROM feedback_log").fetchone()[0]
+            samples = c.execute(
+                "SELECT field, COUNT(*) FROM training_samples GROUP BY field"
+            ).fetchall()
+            models = c.execute(
+                "SELECT field, version, accuracy, samples_count, trained_at, is_active "
+                "FROM model_versions ORDER BY trained_at DESC"
+            ).fetchall()
         return {
             "total_documents": docs,
             "total_corrections": corrections,
             "training_samples": {s[0]: s[1] for s in samples},
-            "trained_models": [{"field": m[0], "version": m[1], "accuracy": m[2], "samples": m[3],
-                                "trained_at": m[4], "is_active": bool(m[5])} for m in models],
+            "trained_models": [
+                {"field": m[0], "version": m[1], "accuracy": m[2], "samples": m[3],
+                 "trained_at": m[4], "is_active": bool(m[5])}
+                for m in models
+            ],
             "loaded_ml_models": list(self.nlp.models.keys()),
             "ml_engine": ml.get_status(),
         }
 
     def get_history(self) -> list:
-        conn = sqlite3.connect(str(DB_PATH))
-        rows = conn.execute("SELECT id, filename, upload_date, extracted_json, model_version FROM documents ORDER BY upload_date DESC LIMIT 50").fetchall()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT id, filename, upload_date, extracted_json, model_version "
+                "FROM documents ORDER BY upload_date DESC LIMIT 50"
+            ).fetchall()
         result = []
         for r in rows:
             try:
                 data = json.loads(r[3]) if r[3] else {}
-                result.append({"id": r[0], "filename": r[1], "date": r[2],
-                               "oggetto": data.get("oggetto_appalto", "N/D"),
-                               "importo": data.get("importo_totale") or data.get("importo_base_gara", "N/D"),
-                               "stazione": data.get("stazione_appaltante", "N/D"),
-                               "confidence": data.get("_confidence", 0),
-                               "lotti": data.get("numero_lotti"),
-                               "procedura": data.get("tipo_procedura", "N/D"),
-                               "model_version": r[4] or "rules-only"})
-            except Exception: pass
+                result.append({
+                    "id": r[0], "filename": r[1], "date": r[2],
+                    "oggetto": data.get("oggetto_appalto", "N/D"),
+                    "importo": data.get("importo_totale") or data.get("importo_base_gara", "N/D"),
+                    "stazione": data.get("stazione_appaltante", "N/D"),
+                    "confidence": data.get("_confidence", 0),
+                    "lotti": data.get("numero_lotti"),
+                    "procedura": data.get("tipo_procedura", "N/D"),
+                    "model_version": r[4] or "rules-only",
+                })
+            except Exception:
+                pass
         return result
 
     def get_document_text(self, doc_id: str) -> Optional[dict]:
-        conn = sqlite3.connect(str(DB_PATH))
-        row = conn.execute("SELECT full_text, extracted_json, corrected_json FROM documents WHERE id=?", (doc_id,)).fetchone()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT full_text, extracted_json, corrected_json FROM documents WHERE id=?",
+                (doc_id,),
+            ).fetchone()
         if row:
-            return {"text": row[0] or "", "extracted": json.loads(row[1]) if row[1] else {}, "corrected": json.loads(row[2]) if row[2] else {}}
+            return {
+                "text": row[0] or "",
+                "extracted": json.loads(row[1]) if row[1] else {},
+                "corrected": json.loads(row[2]) if row[2] else {},
+            }
         return None
 
     def get_corrections_stats(self) -> dict:
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
-        stats = c.execute("SELECT field, COUNT(*) FROM feedback_log GROUP BY field ORDER BY COUNT(*) DESC").fetchall()
-        total = c.execute("SELECT COUNT(*) FROM feedback_log").fetchone()[0]
-        samples = c.execute("SELECT COUNT(*) FROM training_samples").fetchone()[0]
-        conn.close()
-        return {"total_corrections": total, "total_samples": samples, "by_field": {s[0]: s[1] for s in stats}}
+        with get_connection(readonly=True) as conn:
+            c = conn.cursor()
+            stats = c.execute(
+                "SELECT field, COUNT(*) FROM feedback_log GROUP BY field ORDER BY COUNT(*) DESC"
+            ).fetchall()
+            total = c.execute("SELECT COUNT(*) FROM feedback_log").fetchone()[0]
+            samples = c.execute("SELECT COUNT(*) FROM training_samples").fetchone()[0]
+        return {
+            "total_corrections": total,
+            "total_samples": samples,
+            "by_field": {s[0]: s[1] for s in stats},
+        }
 
     def _save_document(self, doc_id, filename, text, extracted, text_hash=None):
-        conn = sqlite3.connect(str(DB_PATH))
-        if not text_hash: text_hash = hashlib.md5(text.encode()).hexdigest()
-        conn.execute("INSERT OR REPLACE INTO documents (id, filename, text_hash, full_text, upload_date, extracted_json, model_version) VALUES (?,?,?,?,?,?,?)",
-                     (doc_id, filename, text_hash, text, datetime.now().isoformat(),
-                      json.dumps(extracted, ensure_ascii=False, default=str), extracted.get("_model_version", "rules-only")))
-        conn.commit(); conn.close()
+        if not text_hash:
+            text_hash = hashlib.sha256(text.encode()).hexdigest()
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO documents "
+                "(id, filename, text_hash, full_text, upload_date, extracted_json, model_version) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (doc_id, filename, text_hash, text, datetime.now().isoformat(),
+                 json.dumps(extracted, ensure_ascii=False, default=str),
+                 extracted.get("_model_version", "rules-only")),
+            )
 
     def _get_sample_count(self, field: str) -> int:
-        conn = sqlite3.connect(str(DB_PATH))
-        n = conn.execute("SELECT COUNT(*) FROM training_samples WHERE field=?", (field,)).fetchone()[0]
-        conn.close()
-        return n
+        with get_connection(readonly=True) as conn:
+            return conn.execute(
+                "SELECT COUNT(*) FROM training_samples WHERE field=?", (field,)
+            ).fetchone()[0]
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# UTILITY
+# UTILITY (delegata a utils.py)
 # ═════════════════════════════════════════════════════════════════════════════
 
-def _find_value_context(text: str, value: str, window: int = 300) -> str:
-    if not value or not text: return ""
-    val_str = str(value).strip()
-    if len(val_str) < 2: return ""
-    idx = text.lower().find(val_str.lower())
-    if idx >= 0:
-        return text[max(0, idx - window):min(len(text), idx + len(val_str) + window)].strip()
-    for word in [w for w in val_str.split() if len(w) > 3]:
-        idx = text.lower().find(word.lower())
-        if idx >= 0:
-            return text[max(0, idx - window):min(len(text), idx + len(word) + window)].strip()
-    for num in re.findall(r'\d{3,}', val_str):
-        idx = text.find(num)
-        if idx >= 0:
-            return text[max(0, idx - window):min(len(text), idx + len(num) + window)].strip()
-    return ""
+# Alias per backward compatibility — moduli che importano da pipeline
+_find_value_context = find_value_context
 
 
 # ── Singleton globale ──────────────────────────────────────────────────

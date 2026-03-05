@@ -24,13 +24,9 @@ Principi:
 
 import json
 import pickle
-import sqlite3
-import hashlib
 import re
 import time
-import logging
 import shutil
-from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Any
 from collections import Counter, defaultdict
@@ -42,29 +38,24 @@ from sklearn.pipeline import Pipeline as SkPipeline, FeatureUnion
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.metrics import accuracy_score, f1_score
 
-logger = logging.getLogger("ml_engine")
+from config import MODEL_DIR, DB_PATH
+from database import get_connection, init_ml_tables
+from utils import find_value_context
+from log_config import get_logger
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-MODEL_DIR = BASE_DIR / "models"
-DB_PATH = DATA_DIR / "learning.db"
-DATA_DIR.mkdir(exist_ok=True)
-MODEL_DIR.mkdir(exist_ok=True)
+logger = get_logger("ml_engine")
 
 # ═════════════════════════════════════════════════════════════════════
 # CONFIGURAZIONE ML
 # ═════════════════════════════════════════════════════════════════════
 
-# Campioni minimi per addestrare un modello
-MIN_SAMPLES_TRAIN = 3
-# Campioni minimi per cross-validation
-MIN_SAMPLES_CV = 6
-# Tolleranza degradazione: -5% accettabile
-MIN_IMPROVEMENT = -0.05
-# Soglia confidenza minima per accettare predizione ML
-DEFAULT_CONFIDENCE_THRESHOLD = 0.30
-# Soglia per override di valori già estratti dalle regole
-ML_OVERRIDE_THRESHOLD = 0.85
+from config import (
+    MIN_SAMPLES_TRAIN,
+    MIN_SAMPLES_CV,
+    MIN_IMPROVEMENT,
+    DEFAULT_CONFIDENCE_THRESHOLD,
+    ML_OVERRIDE_THRESHOLD,
+)
 
 # Pesi qualità per fonte dati — le correzioni umane valgono di più
 DATA_QUALITY_WEIGHTS = {
@@ -92,60 +83,8 @@ class DataStore:
     - Fornisce metriche sulla qualità del dataset
     """
 
-    def __init__(self, db_path=None):
-        self.db_path = str(db_path or DB_PATH)
-        self._ensure_tables()
-
-    def _ensure_tables(self):
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
-        c.executescript("""
-            CREATE TABLE IF NOT EXISTS ml_training_data (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                field TEXT NOT NULL,
-                text_snippet TEXT NOT NULL,
-                correct_value TEXT NOT NULL,
-                wrong_value TEXT,
-                source TEXT DEFAULT 'auto',
-                quality_score REAL DEFAULT 0.5,
-                doc_id TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                is_active INTEGER DEFAULT 1
-            );
-            CREATE INDEX IF NOT EXISTS idx_ml_field ON ml_training_data(field);
-            CREATE INDEX IF NOT EXISTS idx_ml_active ON ml_training_data(is_active);
-
-            CREATE TABLE IF NOT EXISTS ml_model_registry (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                field TEXT NOT NULL,
-                version INTEGER NOT NULL,
-                accuracy REAL,
-                f1_score REAL,
-                cv_score_mean REAL,
-                cv_score_std REAL,
-                n_samples INTEGER,
-                n_classes INTEGER,
-                training_time_ms REAL,
-                feature_importance TEXT,
-                is_active INTEGER DEFAULT 1,
-                notes TEXT,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-            CREATE INDEX IF NOT EXISTS idx_model_field ON ml_model_registry(field);
-
-            CREATE TABLE IF NOT EXISTS ml_predictions_log (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                doc_id TEXT,
-                field TEXT,
-                predicted_value TEXT,
-                confidence REAL,
-                method TEXT,
-                was_correct INTEGER,
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP
-            );
-        """)
-        conn.commit()
-        conn.close()
+    def __init__(self):
+        init_ml_tables()
 
     # ── Aggiunta dati ──────────────────────────────────────────────
 
@@ -171,29 +110,25 @@ class DataStore:
         if len(text) > 500:
             quality = min(1.0, quality + 0.05)
 
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
+        with get_connection() as conn:
+            c = conn.cursor()
 
-        # Anti-duplicato: (campo, valore, primi 200 char dello snippet)
-        existing = c.execute(
-            "SELECT id FROM ml_training_data "
-            "WHERE field=? AND correct_value=? AND substr(text_snippet,1,200)=? AND is_active=1",
-            (field, value, text[:200])
-        ).fetchone()
-        if existing:
-            conn.close()
-            return existing[0]
+            # Anti-duplicato: (campo, valore, primi 200 char dello snippet)
+            existing = c.execute(
+                "SELECT id FROM ml_training_data "
+                "WHERE field=? AND correct_value=? AND substr(text_snippet,1,200)=? AND is_active=1",
+                (field, value, text[:200])
+            ).fetchone()
+            if existing:
+                return existing[0]
 
-        c.execute(
-            "INSERT INTO ml_training_data "
-            "(field, text_snippet, correct_value, wrong_value, source, quality_score, doc_id) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (field, text[:3000], value, wrong_value, source, quality, doc_id)
-        )
-        row_id = c.lastrowid
-        conn.commit()
-        conn.close()
-        return row_id
+            c.execute(
+                "INSERT INTO ml_training_data "
+                "(field, text_snippet, correct_value, wrong_value, source, quality_score, doc_id) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (field, text[:3000], value, wrong_value, source, quality, doc_id)
+            )
+            return c.lastrowid
 
     def add_correction(self, field: str, text: str, correct_value: str,
                        wrong_value: str = None, doc_id: str = "") -> int:
@@ -244,61 +179,57 @@ class DataStore:
     def get_training_data(self, field: str,
                          min_quality: float = 0.0) -> List[Tuple[str, str, float]]:
         """Recupera dati di training per un campo: [(testo, valore, qualità), ...]"""
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute(
-            "SELECT text_snippet, correct_value, quality_score FROM ml_training_data "
-            "WHERE field=? AND is_active=1 AND quality_score >= ? "
-            "ORDER BY quality_score DESC",
-            (field, min_quality)
-        ).fetchall()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT text_snippet, correct_value, quality_score FROM ml_training_data "
+                "WHERE field=? AND is_active=1 AND quality_score >= ? "
+                "ORDER BY quality_score DESC",
+                (field, min_quality)
+            ).fetchall()
         return [(r[0], r[1], r[2]) for r in rows]
 
     def get_all_fields(self) -> Dict[str, int]:
         """Tutti i campi con conteggio campioni."""
-        conn = sqlite3.connect(self.db_path)
-        rows = conn.execute(
-            "SELECT field, COUNT(*) FROM ml_training_data "
-            "WHERE is_active=1 GROUP BY field ORDER BY COUNT(*) DESC"
-        ).fetchall()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT field, COUNT(*) FROM ml_training_data "
+                "WHERE is_active=1 GROUP BY field ORDER BY COUNT(*) DESC"
+            ).fetchall()
         return {r[0]: r[1] for r in rows}
 
     def get_data_quality(self, field: str = None) -> dict:
         """Metriche di qualità del dataset."""
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
+        with get_connection(readonly=True) as conn:
+            c = conn.cursor()
 
-        if field:
-            where = "WHERE field=? AND is_active=1"
-            params = (field,)
-        else:
-            where = "WHERE is_active=1"
-            params = ()
+            if field:
+                where = "WHERE field=? AND is_active=1"
+                params = (field,)
+            else:
+                where = "WHERE is_active=1"
+                params = ()
 
-        total = c.execute(
-            f"SELECT COUNT(*) FROM ml_training_data {where}", params
-        ).fetchone()[0]
-        avg_quality = c.execute(
-            f"SELECT AVG(quality_score) FROM ml_training_data {where}", params
-        ).fetchone()[0] or 0
+            total = c.execute(
+                f"SELECT COUNT(*) FROM ml_training_data {where}", params
+            ).fetchone()[0]
+            avg_quality = c.execute(
+                f"SELECT AVG(quality_score) FROM ml_training_data {where}", params
+            ).fetchone()[0] or 0
 
-        sources = c.execute(
-            f"SELECT source, COUNT(*), AVG(quality_score) "
-            f"FROM ml_training_data {where} GROUP BY source", params
-        ).fetchall()
+            sources = c.execute(
+                f"SELECT source, COUNT(*), AVG(quality_score) "
+                f"FROM ml_training_data {where} GROUP BY source", params
+            ).fetchall()
 
-        fields_data = c.execute(
-            f"SELECT field, COUNT(*), AVG(quality_score) "
-            f"FROM ml_training_data {where} GROUP BY field ORDER BY COUNT(*) DESC", params
-        ).fetchall()
+            fields_data = c.execute(
+                f"SELECT field, COUNT(*), AVG(quality_score) "
+                f"FROM ml_training_data {where} GROUP BY field ORDER BY COUNT(*) DESC", params
+            ).fetchall()
 
-        diversity = c.execute(
-            f"SELECT field, COUNT(DISTINCT correct_value) "
-            f"FROM ml_training_data {where} GROUP BY field", params
-        ).fetchall()
-
-        conn.close()
+            diversity = c.execute(
+                f"SELECT field, COUNT(DISTINCT correct_value) "
+                f"FROM ml_training_data {where} GROUP BY field", params
+            ).fetchall()
 
         return {
             "total_examples": total,
@@ -316,82 +247,48 @@ class DataStore:
 
     def remove_example(self, example_id: int):
         """Disattiva un esempio (soft delete)."""
-        conn = sqlite3.connect(self.db_path)
-        conn.execute(
-            "UPDATE ml_training_data SET is_active=0 WHERE id=?", (example_id,)
-        )
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE ml_training_data SET is_active=0 WHERE id=?", (example_id,)
+            )
 
     # ── Migrazione da vecchio schema ───────────────────────────────
 
     def migrate_from_old_tables(self) -> int:
         """Importa dati dalla vecchia tabella training_samples."""
-        conn = sqlite3.connect(self.db_path)
-        c = conn.cursor()
         try:
-            rows = c.execute(
-                "SELECT field, text_snippet, correct_value, wrong_value, source, created_at "
-                "FROM training_samples"
-            ).fetchall()
-            migrated = 0
-            for r in rows:
-                existing = c.execute(
-                    "SELECT id FROM ml_training_data "
-                    "WHERE field=? AND correct_value=? AND substr(text_snippet,1,200)=?",
-                    (r[0], r[2], (r[1] or "")[:200])
-                ).fetchone()
-                if not existing:
-                    source = r[4] or "manual"
-                    quality = DATA_QUALITY_WEIGHTS.get(source, 0.5)
-                    c.execute(
-                        "INSERT INTO ml_training_data "
-                        "(field, text_snippet, correct_value, wrong_value, source, "
-                        "quality_score, created_at) VALUES (?,?,?,?,?,?,?)",
-                        (r[0], r[1], r[2], r[3], source, quality, r[5])
-                    )
-                    migrated += 1
-            conn.commit()
-            conn.close()
-            return migrated
+            with get_connection() as conn:
+                c = conn.cursor()
+                rows = c.execute(
+                    "SELECT field, text_snippet, correct_value, wrong_value, source, created_at "
+                    "FROM training_samples"
+                ).fetchall()
+                migrated = 0
+                for r in rows:
+                    existing = c.execute(
+                        "SELECT id FROM ml_training_data "
+                        "WHERE field=? AND correct_value=? AND substr(text_snippet,1,200)=?",
+                        (r[0], r[2], (r[1] or "")[:200])
+                    ).fetchone()
+                    if not existing:
+                        source = r[4] or "manual"
+                        quality = DATA_QUALITY_WEIGHTS.get(source, 0.5)
+                        c.execute(
+                            "INSERT INTO ml_training_data "
+                            "(field, text_snippet, correct_value, wrong_value, source, "
+                            "quality_score, created_at) VALUES (?,?,?,?,?,?,?)",
+                            (r[0], r[1], r[2], r[3], source, quality, r[5])
+                        )
+                        migrated += 1
+                return migrated
         except Exception:
-            conn.close()
             return 0
 
     # ── Utilità ────────────────────────────────────────────────────
 
     def _find_context(self, text: str, value: str, window: int = 500) -> str:
         """Trova il contesto testuale intorno a un valore nel documento."""
-        if not value or not text:
-            return ""
-        val_str = str(value).strip()
-        if len(val_str) < 2:
-            return ""
-
-        # Ricerca diretta
-        idx = text.lower().find(val_str.lower())
-        if idx >= 0:
-            start = max(0, idx - window)
-            end = min(len(text), idx + len(val_str) + window)
-            return text[start:end].strip()
-
-        # Ricerca per parole chiave
-        for word in [w for w in val_str.split() if len(w) > 3]:
-            idx = text.lower().find(word.lower())
-            if idx >= 0:
-                start = max(0, idx - window)
-                end = min(len(text), idx + len(word) + window)
-                return text[start:end].strip()
-
-        # Ricerca numeri (per importi)
-        for num in re.findall(r'\d{3,}', val_str):
-            idx = text.find(num)
-            if idx >= 0:
-                start = max(0, idx - window)
-                end = min(len(text), idx + len(num) + window)
-                return text[start:end].strip()
-
-        return ""
+        return find_value_context(text, value, window=window)
 
 
 # ═════════════════════════════════════════════════════════════════════
@@ -688,8 +585,8 @@ class MLEngine:
     - Raccomandazioni per migliorare le prestazioni
     """
 
-    def __init__(self, db_path=None):
-        self.data = DataStore(db_path)
+    def __init__(self):
+        self.data = DataStore()
         self.models: Dict[str, FieldModel] = {}
         self.confidence_threshold = DEFAULT_CONFIDENCE_THRESHOLD
         self._load_models()
@@ -1245,63 +1142,60 @@ class MLEngine:
 
     def _register_model_version(self, field: str, model: FieldModel):
         """Registra una versione del modello nel database."""
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
+        with get_connection() as conn:
+            c = conn.cursor()
 
-        # Disattiva vecchie versioni
-        c.execute(
-            "UPDATE ml_model_registry SET is_active=0 WHERE field=?", (field,)
-        )
-
-        # Prossima versione
-        current_v = c.execute(
-            "SELECT MAX(version) FROM ml_model_registry WHERE field=?", (field,)
-        ).fetchone()[0] or 0
-        new_v = current_v + 1
-        model.version = new_v
-
-        c.execute(
-            "INSERT INTO ml_model_registry "
-            "(field, version, accuracy, f1_score, cv_score_mean, cv_score_std, "
-            "n_samples, n_classes, training_time_ms, is_active, notes) "
-            "VALUES (?,?,?,?,?,?,?,?,?,1,?)",
-            (
-                field, new_v,
-                model.metrics.get("accuracy"),
-                model.metrics.get("f1"),
-                model.metrics.get("cv_mean"),
-                model.metrics.get("cv_std"),
-                model.n_samples,
-                model.metrics.get("n_classes"),
-                model.metrics.get("training_time_ms"),
-                json.dumps(model.metrics, default=str),
+            # Disattiva vecchie versioni
+            c.execute(
+                "UPDATE ml_model_registry SET is_active=0 WHERE field=?", (field,)
             )
-        )
-        conn.commit()
-        conn.close()
+
+            # Prossima versione
+            current_v = c.execute(
+                "SELECT MAX(version) FROM ml_model_registry WHERE field=?", (field,)
+            ).fetchone()[0] or 0
+            new_v = current_v + 1
+            model.version = new_v
+
+            c.execute(
+                "INSERT INTO ml_model_registry "
+                "(field, version, accuracy, f1_score, cv_score_mean, cv_score_std, "
+                "n_samples, n_classes, training_time_ms, is_active, notes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,1,?)",
+                (
+                    field, new_v,
+                    model.metrics.get("accuracy"),
+                    model.metrics.get("f1"),
+                    model.metrics.get("cv_mean"),
+                    model.metrics.get("cv_std"),
+                    model.n_samples,
+                    model.metrics.get("n_classes"),
+                    model.metrics.get("training_time_ms"),
+                    json.dumps(model.metrics, default=str),
+                )
+            )
 
     def get_model_versions(self, field: str = None) -> list:
         """Storico versioni modelli."""
-        conn = sqlite3.connect(str(DB_PATH))
-        c = conn.cursor()
+        with get_connection(readonly=True) as conn:
+            c = conn.cursor()
 
-        if field:
-            rows = c.execute(
-                "SELECT field, version, accuracy, f1_score, cv_score_mean, "
-                "cv_score_std, n_samples, n_classes, training_time_ms, "
-                "is_active, notes, created_at "
-                "FROM ml_model_registry WHERE field=? ORDER BY version DESC",
-                (field,)
-            ).fetchall()
-        else:
-            rows = c.execute(
-                "SELECT field, version, accuracy, f1_score, cv_score_mean, "
-                "cv_score_std, n_samples, n_classes, training_time_ms, "
-                "is_active, notes, created_at "
-                "FROM ml_model_registry ORDER BY created_at DESC"
-            ).fetchall()
+            if field:
+                rows = c.execute(
+                    "SELECT field, version, accuracy, f1_score, cv_score_mean, "
+                    "cv_score_std, n_samples, n_classes, training_time_ms, "
+                    "is_active, notes, created_at "
+                    "FROM ml_model_registry WHERE field=? ORDER BY version DESC",
+                    (field,)
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    "SELECT field, version, accuracy, f1_score, cv_score_mean, "
+                    "cv_score_std, n_samples, n_classes, training_time_ms, "
+                    "is_active, notes, created_at "
+                    "FROM ml_model_registry ORDER BY created_at DESC"
+                ).fetchall()
 
-        conn.close()
         return [{
             "field": r[0], "version": r[1], "accuracy": r[2], "f1": r[3],
             "cv_mean": r[4], "cv_std": r[5], "n_samples": r[6],

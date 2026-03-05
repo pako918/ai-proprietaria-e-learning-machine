@@ -3,19 +3,24 @@ AppaltoAI - Backend FastAPI
 API REST — Pipeline 9 fasi — Training SOLO supervisionato
 """
 
-import io
 import json
-import re
 import sys
 import os
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from pathlib import Path
-from datetime import datetime
-from pipeline import pipeline, DB_PATH
+from config import (
+    BASE_DIR, CORS_ORIGINS, SERVER_HOST, SERVER_PORT,
+    API_VERSION, APP_TITLE, MAX_UPLOAD_SIZE_BYTES, MIN_TEXT_LENGTH,
+)
+from log_config import setup_logging, get_logger
+from database import get_connection
+from pipeline import pipeline
 from field_registry import registry
 from schemas import full_validation
+
+setup_logging()
+logger = get_logger("server")
 
 # ── Dipendenze: FastAPI o fallback HTTP ───────────────────────────────────────
 try:
@@ -28,10 +33,6 @@ try:
 except ImportError:
     HAS_FASTAPI = False
 
-BASE_DIR = Path(__file__).parent
-UPLOAD_DIR = BASE_DIR / "data" / "uploads"
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
 
 # ═════════════════════════════════════════════════════════════════════════════
 # FASTAPI APP
@@ -39,21 +40,20 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 if HAS_FASTAPI:
     app = FastAPI(
-        title="AppaltoAI API",
+        title=APP_TITLE,
         description="AI proprietaria per estrazione dati da bandi di gara — Pipeline 9 fasi",
-        version="2.0.0"
+        version=API_VERSION,
     )
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=CORS_ORIGINS,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization"],
     )
 
-    frontend_dir = BASE_DIR
-    if (frontend_dir / "index.html").exists():
-        app.mount("/static", StaticFiles(directory=str(frontend_dir), html=True), name="static")
+    if (BASE_DIR / "index.html").exists():
+        app.mount("/static", StaticFiles(directory=str(BASE_DIR), html=True), name="static")
 
     # ══════════════════════════════════════════════════════════════════════
     # CORE ENDPOINTS
@@ -64,14 +64,14 @@ if HAS_FASTAPI:
         index_file = BASE_DIR / "index.html"
         if index_file.exists():
             return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
-        return {"status": "AppaltoAI attivo", "version": "2.0.0"}
+        return {"status": "AppaltoAI attivo", "version": API_VERSION}
 
     @app.get("/api/health")
     async def health():
         stats = pipeline.get_stats()
         return {
             "status": "ok",
-            "version": "3.0.0",
+            "version": API_VERSION,
             "architecture": "ML-powered extraction pipeline",
             "learning_mode": "data-driven supervised",
             "ml_engine": pipeline.get_ml_status(),
@@ -85,11 +85,12 @@ if HAS_FASTAPI:
     @app.post("/api/extract")
     async def extract_pdf(file: UploadFile = File(...)):
         """Pipeline completa 9 fasi per PDF."""
-        if not file.filename.lower().endswith(".pdf"):
+        if not file.filename or not file.filename.lower().endswith(".pdf"):
             raise HTTPException(400, "Solo file PDF accettati")
         content = await file.read()
-        if len(content) > 50 * 1024 * 1024:
-            raise HTTPException(400, "File troppo grande (max 50MB)")
+        if len(content) > MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(400, f"File troppo grande (max {MAX_UPLOAD_SIZE_BYTES // (1024*1024)}MB)")
+        logger.info("Estrazione PDF: %s (%d bytes)", file.filename, len(content))
         result = pipeline.process_pdf(content, file.filename)
         if "error" in result:
             raise HTTPException(422, result["error"])
@@ -100,7 +101,7 @@ if HAS_FASTAPI:
         """Pipeline per testo grezzo."""
         text = payload.get("text", "")
         filename = payload.get("filename", "input.txt")
-        if len(text) < 20:
+        if len(text) < MIN_TEXT_LENGTH:
             raise HTTPException(400, "Testo troppo breve")
         result = pipeline.process_text(text, filename)
         return JSONResponse(content=result)
@@ -194,13 +195,12 @@ if HAS_FASTAPI:
 
     @app.get("/api/history/{doc_id}")
     async def get_document(doc_id: str):
-        import sqlite3
-        conn = sqlite3.connect(str(DB_PATH))
-        row = conn.execute(
-            "SELECT filename, upload_date, extracted_json, corrected_json FROM documents WHERE id=?",
-            (doc_id,)
-        ).fetchone()
-        conn.close()
+        with get_connection(readonly=True) as conn:
+            row = conn.execute(
+                "SELECT filename, upload_date, extracted_json, corrected_json "
+                "FROM documents WHERE id=?",
+                (doc_id,)
+            ).fetchone()
         if not row:
             raise HTTPException(404, "Documento non trovato")
         return {
@@ -355,7 +355,7 @@ if HAS_FASTAPI:
         versions = pipeline.get_model_versions()
         ml_status = pipeline.get_ml_status()
         return {
-            "pipeline_version": "3.0.0",
+            "pipeline_version": API_VERSION,
             "architecture": "ML-powered extraction",
             "learning_mode": "data-driven supervised",
             "ml_engine": ml_status,
@@ -383,7 +383,8 @@ if HAS_FASTAPI:
         return {"status": "deprecated", "message": "Quarantine rimossa."}
 
     if __name__ == "__main__":
-        uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+        logger.info("Avvio AppaltoAI su %s:%d", SERVER_HOST, SERVER_PORT)
+        uvicorn.run("server:app", host=SERVER_HOST, port=SERVER_PORT, reload=True)
 
 else:
     # ── Fallback: server HTTP (stdlib) ────────────────────────────────────

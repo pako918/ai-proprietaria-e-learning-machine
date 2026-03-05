@@ -10,6 +10,13 @@ services:
     restart: unless-stopped
     environment:
       - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+      - CORS_ORIGINS=*
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   appaltoai-data:

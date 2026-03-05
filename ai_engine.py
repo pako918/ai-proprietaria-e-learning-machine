@@ -1,9 +1,24 @@
 """
-AppaltoAI - Motore Ibrido MODULARE + ML Engine
+AppaltoAI - Motore Ibrido MODULARE + ML Engine  [DEPRECATO]
+=============================================================
+DEPRECATO: questo modulo è sostituito da pipeline.py che offre la stessa
+funzionalità con architettura migliorata (config centralizzata, gestione DB
+tramite context manager, utility condivise).
+
+Mantenuto per backward compatibility. Per nuove integrazioni usare:
+    from pipeline import pipeline
+
 Addestrato su bandi reali D.Lgs. 36/2023 - Servizi di Ingegneria e Architettura
 Usa field_registry.py come fonte unica di verità per i campi.
 Il modello impara schemi dai dati via ml_engine.py
 """
+
+import warnings
+warnings.warn(
+    "ai_engine è deprecato. Usare pipeline.py per l'estrazione.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
 import re
 import json
