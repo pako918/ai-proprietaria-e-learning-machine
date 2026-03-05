@@ -1,220 +1,14 @@
 """
-AppaltoAI — Pydantic Schema Enforcement + Coherence Validation
-Modelli strutturati per validazione rigida dell'output di estrazione.
+AppaltoAI — Validazione Schema + Coerenza
+Validazione dell'output strutturato basato su output_schema.py.
 """
 
-from datetime import date, datetime
+from datetime import date
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import ValidationError
 import re
 
-
-# ═════════════════════════════════════════════════════════════════════════════
-# MODELLI PYDANTIC — Estrazione Appalto
-# ═════════════════════════════════════════════════════════════════════════════
-
-class PageSource(BaseModel):
-    """Sorgente pagina/sezione per un campo estratto."""
-    field: str
-    page: Optional[int] = None
-    section: Optional[str] = None
-    snippet: Optional[str] = None
-    confidence: float = 0.0
-    method: str = "unknown"
-
-
-class CriterioOEPV(BaseModel):
-    """Singolo criterio di valutazione OEPV."""
-    descrizione: str = ""
-    punteggio_max: Optional[float] = None
-    tipo: str = ""  # "tecnico", "economico", "tabellare", "discrezionale"
-    sub_criteri: List[dict] = Field(default_factory=list)
-
-
-class AppaltoResult(BaseModel):
-    """Schema completo per un appalto pubblico italiano.
-    Tutti i campi con validazione integrata."""
-
-    # ── Identificativi ────────────────────────────────────────────────
-    cig: Optional[str] = Field(None, description="Codice Identificativo Gara (10 alfanumerico)")
-    cup: Optional[str] = Field(None, description="Codice Unico Progetto")
-    numero_gara: Optional[str] = Field(None, description="Numero di gara ANAC")
-
-    # ── Stazione Appaltante ───────────────────────────────────────────
-    stazione_appaltante: Optional[str] = None
-    responsabile_procedimento: Optional[str] = Field(None, alias="rup")
-    rup: Optional[str] = None
-
-    # ── Oggetto ────────────────────────────────────────────────────────
-    oggetto: Optional[str] = None
-    tipo_appalto: Optional[str] = None  # "lavori", "servizi", "forniture"
-    cpv: Optional[str] = None
-    luogo_esecuzione: Optional[str] = None
-
-    # ── Importi ────────────────────────────────────────────────────────
-    importo_base_asta: Optional[str] = None
-    importo_sicurezza: Optional[str] = None
-    importo_totale: Optional[str] = None
-    valore_stimato: Optional[str] = None
-    oneri_sicurezza: Optional[str] = None
-
-    # ── Date ───────────────────────────────────────────────────────────
-    scadenza_offerte: Optional[str] = None
-    data_pubblicazione: Optional[str] = None
-    data_seduta_pubblica: Optional[str] = None
-    durata_contratto: Optional[str] = None
-
-    # ── Procedura ──────────────────────────────────────────────────────
-    tipo_procedura: Optional[str] = None  # "aperta", "ristretta", "negoziata"
-    criterio_aggiudicazione: Optional[str] = None  # "OEPV", "prezzo più basso"
-    base_giuridica: Optional[str] = None
-    ammissione_rti: Optional[str] = None
-
-    # ── Punteggi ───────────────────────────────────────────────────────
-    punteggio_tecnico: Optional[str] = None
-    punteggio_economico: Optional[str] = None
-    punteggio_totale: Optional[str] = None
-
-    # ── Garanzie e requisiti ───────────────────────────────────────────
-    garanzia_provvisoria: Optional[str] = None
-    garanzia_definitiva: Optional[str] = None
-    requisiti_capacita_tecnica: Optional[str] = None
-    requisiti_capacita_economica: Optional[str] = None
-    requisiti_soa: Optional[str] = None
-
-    # ── Subappalto ─────────────────────────────────────────────────────
-    subappalto: Optional[str] = None
-    limite_subappalto: Optional[str] = None
-
-    # ── OEPV criteri strutturati ───────────────────────────────────────
-    criteri_oepv: List[CriterioOEPV] = Field(default_factory=list)
-
-    # ── Metadati qualità ───────────────────────────────────────────────
-    page_sources: List[PageSource] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    coherence_score: float = Field(0.0, ge=0.0, le=1.0)
-
-    class Config:
-        populate_by_name = True
-
-    # ── Validatori CIG ─────────────────────────────────────────────────
-    @field_validator("cig")
-    @classmethod
-    def validate_cig(cls, v):
-        if v and not re.match(r'^[A-Z0-9]{10}$', v.upper().strip()):
-            # Tenta pulizia
-            cleaned = re.sub(r'[^A-Za-z0-9]', '', v.strip())
-            if len(cleaned) == 10:
-                return cleaned.upper()
-            return None  # CIG non valido → rimuovi
-        return v.upper().strip() if v else v
-
-    # ── Validatori importi ─────────────────────────────────────────────
-    @field_validator("importo_base_asta", "importo_sicurezza", "importo_totale",
-                     "valore_stimato", "oneri_sicurezza", mode="before")
-    @classmethod
-    def validate_importi(cls, v):
-        if v is None:
-            return v
-        v = str(v).strip()
-        # Pulizia: rimuovi "Euro", "€", spazi
-        cleaned = re.sub(r'[€Ee][Uu][Rr][Oo]|EUR|€', '', v).strip()
-        cleaned = cleaned.replace(" ", "")
-        # Accetta formato italiano (1.234.567,89) o internazionale
-        if re.match(r'^[\d.,]+$', cleaned):
-            return v
-        return v
-
-    # ── Validatori punteggi ────────────────────────────────────────────
-    @field_validator("punteggio_tecnico", "punteggio_economico", "punteggio_totale", mode="before")
-    @classmethod
-    def validate_punteggi(cls, v):
-        if v is None:
-            return v
-        # Prova a convertire in numero
-        v_str = str(v).strip()
-        cleaned = v_str.replace(",", ".")
-        cleaned = re.sub(r'[^\d.]', '', cleaned)
-        try:
-            num = float(cleaned)
-            if num < 0 or num > 200:  # Range ragionevole
-                return None
-            return v_str
-        except ValueError:
-            return v_str
-
-    # ── Validatori date ────────────────────────────────────────────────
-    @field_validator("scadenza_offerte", "data_pubblicazione", "data_seduta_pubblica", mode="before")
-    @classmethod
-    def validate_date(cls, v):
-        if v is None:
-            return v
-        v = str(v).strip()
-        # Accetta vari formati data italiani
-        for pattern in [
-            r'\d{2}/\d{2}/\d{4}',
-            r'\d{2}\.\d{2}\.\d{4}',
-            r'\d{2}-\d{2}-\d{4}',
-            r'\d{1,2}\s+\w+\s+\d{4}',
-        ]:
-            if re.search(pattern, v):
-                return v
-        return v  # Conserva anche se formato non standard
-
-    # ── Model-level cross-validation ───────────────────────────────────
-    @model_validator(mode="after")
-    def cross_validate(self):
-        """Validazione incrociata tra campi correlati."""
-        warnings = list(self.warnings) if self.warnings else []
-
-        # Check: punteggio_totale ≈ tecnico + economico
-        try:
-            pt = _parse_number(self.punteggio_tecnico)
-            pe = _parse_number(self.punteggio_economico)
-            tot = _parse_number(self.punteggio_totale)
-            if pt and pe and tot:
-                if abs((pt + pe) - tot) > 1.0:
-                    warnings.append(
-                        f"⚠️ Incoerenza punteggi: tecnico({pt}) + economico({pe}) = {pt+pe} ≠ totale({tot})"
-                    )
-        except Exception:
-            pass
-
-        # Check: oneri sicurezza < importo base
-        try:
-            iba = _parse_money(self.importo_base_asta)
-            ons = _parse_money(self.oneri_sicurezza)
-            if iba and ons and ons > iba:
-                warnings.append(
-                    f"⚠️ Oneri sicurezza ({ons}) superiori all'importo base ({iba})"
-                )
-        except Exception:
-            pass
-
-        # Check: scadenza_offerte dopo data_pubblicazione
-        try:
-            dp = _parse_date_it(self.data_pubblicazione)
-            so = _parse_date_it(self.scadenza_offerte)
-            if dp and so and so < dp:
-                warnings.append(
-                    f"⚠️ Scadenza offerte ({self.scadenza_offerte}) precedente alla pubblicazione ({self.data_pubblicazione})"
-                )
-        except Exception:
-            pass
-
-        # Check: criterio OEPV ma nessun punteggio
-        if self.criterio_aggiudicazione and "oepv" in self.criterio_aggiudicazione.lower():
-            if not self.punteggio_tecnico and not self.punteggio_economico:
-                warnings.append(
-                    "⚠️ Criterio OEPV dichiarato ma nessun punteggio tecnico/economico trovato"
-                )
-
-        # Check: CIG presente
-        if not self.cig:
-            warnings.append("⚠️ CIG non trovato nel documento")
-
-        self.warnings = warnings
-        return self
+from output_schema import AppaltoOutput
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -223,37 +17,25 @@ class AppaltoResult(BaseModel):
 
 class CoherenceValidator:
     """Motore di validazione della coerenza dei dati estratti.
-    Controlla relazioni logiche tra campi."""
+    Opera sulla struttura nested (output_schema)."""
 
     def __init__(self):
         self.checks = []
         self.score = 1.0
 
-    def validate(self, result: AppaltoResult) -> dict:
-        """Esegue tutti i controlli di coerenza. Ritorna report dettagliato."""
+    def validate(self, data: dict) -> dict:
+        """Esegue tutti i controlli di coerenza su un dict output.
+        Ritorna report dettagliato."""
         self.checks = []
         self.score = 1.0
         penalty_per_issue = 0.1
 
-        # 1. Punteggi coerenti
-        self._check_punteggi(result)
+        self._check_punteggi(data)
+        self._check_importi(data)
+        self._check_criteri_sum(data)
+        self._check_completeness(data)
+        self._check_formats(data)
 
-        # 2. Importi coerenti
-        self._check_importi(result)
-
-        # 3. Date ordinate
-        self._check_date(result)
-
-        # 4. Criteri OEPV sum
-        self._check_criteri_oepv(result)
-
-        # 5. Completezza campi critici
-        self._check_completeness(result)
-
-        # 6. Formato valori
-        self._check_formats(result)
-
-        # Calcola score
         n_issues = sum(1 for c in self.checks if c["status"] == "fail")
         self.score = max(0.0, 1.0 - n_issues * penalty_per_issue)
 
@@ -269,17 +51,30 @@ class CoherenceValidator:
     def _add(self, name: str, status: str, message: str):
         self.checks.append({"check": name, "status": status, "message": message})
 
-    def _check_punteggi(self, r: AppaltoResult):
-        pt = _parse_number(r.punteggio_tecnico)
-        pe = _parse_number(r.punteggio_economico)
-        tot = _parse_number(r.punteggio_totale)
+    def _check_punteggi(self, d: dict):
+        """Verifica coerenza punteggi tecnica + economica = totale."""
+        ot = d.get("offerta_tecnica", {}) or {}
+        oe = d.get("offerta_economica", {}) or {}
+        crit = d.get("criteri_valutazione_offerta_tecnica", {}) or {}
 
-        if pt is not None and pe is not None and tot is not None:
+        pt = ot.get("punteggio_massimo")
+        pe = oe.get("punteggio_massimo")
+        totale = crit.get("punteggio_totale")
+
+        if pt is not None and pe is not None and totale is not None:
             expected = pt + pe
-            if abs(expected - tot) <= 1.0:
-                self._add("punteggi_sum", "pass", f"Tecnico({pt})+Economico({pe})={expected} ≈ Totale({tot})")
+            if abs(expected - totale) <= 1.0:
+                self._add("punteggi_sum", "pass",
+                           f"Tecnico({pt})+Economico({pe})={expected} ≈ Totale({totale})")
             else:
-                self._add("punteggi_sum", "fail", f"Tecnico({pt})+Economico({pe})={expected} ≠ Totale({tot})")
+                self._add("punteggi_sum", "fail",
+                           f"Tecnico({pt})+Economico({pe})={expected} ≠ Totale({totale})")
+
+        rip = crit.get("ripartizione", {}) or {}
+        if rip.get("offerta_tecnica") is not None and pt is not None:
+            if abs(rip["offerta_tecnica"] - pt) > 0.5:
+                self._add("ripartizione_tecnica", "fail",
+                           f"Ripartizione tecnica ({rip['offerta_tecnica']}) ≠ punteggio OT ({pt})")
 
         if pt is not None and (pt < 0 or pt > 100):
             self._add("punteggio_tecnico_range", "fail", f"Punteggio tecnico fuori range: {pt}")
@@ -291,181 +86,134 @@ class CoherenceValidator:
         elif pe is not None:
             self._add("punteggio_economico_range", "pass", f"Punteggio economico {pe} nel range 0-100")
 
-    def _check_importi(self, r: AppaltoResult):
-        iba = _parse_money(r.importo_base_asta)
-        ons = _parse_money(r.oneri_sicurezza)
-        itot = _parse_money(r.importo_totale)
+    def _check_importi(self, d: dict):
+        """Verifica coerenza importi lotti vs totale."""
+        descr = d.get("descrizione_lavori_con_importo_totale", {}) or {}
+        totale = descr.get("importo_totale_procedura_euro")
+        lotti = descr.get("lotti", [])
 
-        if iba is not None and iba > 0:
-            self._add("importo_base_positivo", "pass", f"Importo base asta: {iba:,.2f}")
-        elif iba is not None:
-            self._add("importo_base_positivo", "fail", f"Importo base asta non positivo: {iba}")
+        if lotti and totale:
+            somma_lotti = sum(l.get("importo_euro", 0) or 0 for l in lotti)
+            if somma_lotti > 0:
+                if abs(somma_lotti - totale) <= totale * 0.02:
+                    self._add("importi_lotti_sum", "pass",
+                               f"Somma lotti ({somma_lotti:,.2f}) ≈ Totale ({totale:,.2f})")
+                else:
+                    self._add("importi_lotti_sum", "warn",
+                               f"Somma lotti ({somma_lotti:,.2f}) ≠ Totale ({totale:,.2f})")
 
-        if iba and ons and ons > iba:
-            self._add("oneri_vs_importo", "fail", f"Oneri sicurezza ({ons:,.2f}) > importo base ({iba:,.2f})")
-        elif iba and ons:
-            self._add("oneri_vs_importo", "pass", f"Oneri sicurezza ({ons:,.2f}) < importo base ({iba:,.2f})")
+        if totale is not None and totale > 0:
+            self._add("importo_totale_positivo", "pass", f"Importo totale: {totale:,.2f}")
+        elif totale is not None:
+            self._add("importo_totale_positivo", "fail", f"Importo totale non positivo: {totale}")
 
-        if itot and iba and itot < iba * 0.5:
-            self._add("importo_totale_vs_base", "warn",
-                       f"Importo totale ({itot:,.2f}) molto inferiore a base asta ({iba:,.2f})")
+        # Quota fissa + ribassabile ≈ importo lotto
+        for lotto in lotti:
+            imp = lotto.get("importo_euro")
+            qf = lotto.get("quota_fissa_65_percento_euro")
+            qr = lotto.get("quota_ribassabile_35_percento_euro")
+            n = lotto.get("lotto", "?")
+            if imp and qf and qr:
+                if abs((qf + qr) - imp) <= 1.0:
+                    self._add(f"quote_lotto_{n}", "pass",
+                               f"Lotto {n}: quota fissa + ribassabile = importo")
+                else:
+                    self._add(f"quote_lotto_{n}", "fail",
+                               f"Lotto {n}: {qf}+{qr}={qf+qr} ≠ {imp}")
 
-    def _check_date(self, r: AppaltoResult):
-        dp = _parse_date_it(r.data_pubblicazione)
-        so = _parse_date_it(r.scadenza_offerte)
-        ds = _parse_date_it(r.data_seduta_pubblica)
+    def _check_criteri_sum(self, d: dict):
+        """Verifica che la somma dei criteri = punteggio max OT."""
+        ot = d.get("offerta_tecnica", {}) or {}
+        criteri = ot.get("criteri", [])
+        pt_max = ot.get("punteggio_massimo")
 
-        if dp and so:
-            if so >= dp:
-                self._add("date_ordine_pub_scad", "pass", f"Pubblicazione({dp}) → Scadenza({so})")
-            else:
-                self._add("date_ordine_pub_scad", "fail", f"Scadenza({so}) prima di pubblicazione({dp})")
+        if criteri and pt_max:
+            somma_criteri = sum(c.get("punteggio", 0) or 0 for c in criteri)
+            if abs(somma_criteri - pt_max) <= 1.0:
+                self._add("criteri_sum", "pass",
+                           f"Somma criteri ({somma_criteri}) ≈ max OT ({pt_max})")
+            elif somma_criteri > 0:
+                self._add("criteri_sum", "warn",
+                           f"Somma criteri ({somma_criteri}) ≠ max OT ({pt_max})")
 
-        if so and ds:
-            if ds >= so:
-                self._add("date_ordine_scad_seduta", "pass", f"Scadenza({so}) → Seduta({ds})")
-            else:
-                self._add("date_ordine_scad_seduta", "warn", f"Seduta({ds}) prima di scadenza({so})")
-
-    def _check_criteri_oepv(self, r: AppaltoResult):
-        if not r.criteri_oepv:
-            return
-        total_peso = sum(c.punteggio_max or 0 for c in r.criteri_oepv)
-        tot = _parse_number(r.punteggio_totale) or 100
-        if abs(total_peso - tot) <= 2:
-            self._add("oepv_sum", "pass", f"Somma criteri OEPV ({total_peso}) ≈ totale ({tot})")
-        elif total_peso > 0:
-            self._add("oepv_sum", "fail", f"Somma criteri OEPV ({total_peso}) ≠ totale ({tot})")
-
-    def _check_completeness(self, r: AppaltoResult):
-        critical = ["cig", "oggetto", "stazione_appaltante", "importo_base_asta", "scadenza_offerte"]
-        found = sum(1 for f in critical if getattr(r, f, None))
+    def _check_completeness(self, d: dict):
+        """Verifica presenza campi critici."""
+        critical = {
+            "cig": d.get("cig"),
+            "oggetto_appalto": d.get("oggetto_appalto"),
+            "stazione_appaltante": d.get("stazione_appaltante"),
+            "scadenza": d.get("scadenza"),
+            "tipologia_appalto": d.get("tipologia_appalto"),
+        }
+        found = sum(1 for v in critical.values() if v)
         total = len(critical)
+        missing = [k for k, v in critical.items() if not v]
+
         if found == total:
             self._add("completeness", "pass", f"Tutti i {total} campi critici presenti")
         elif found >= total * 0.6:
-            missing = [f for f in critical if not getattr(r, f, None)]
             self._add("completeness", "warn", f"Campi critici mancanti: {', '.join(missing)}")
         else:
-            missing = [f for f in critical if not getattr(r, f, None)]
             self._add("completeness", "fail", f"Troppi campi critici mancanti: {', '.join(missing)}")
 
-    def _check_formats(self, r: AppaltoResult):
-        if r.cig and not re.match(r'^[A-Z0-9]{10}$', r.cig.upper()):
-            self._add("cig_format", "fail", f"CIG malformato: {r.cig}")
-        elif r.cig:
-            self._add("cig_format", "pass", f"CIG valido: {r.cig}")
+    def _check_formats(self, d: dict):
+        """Verifica formato CIG e CUP."""
+        cig = d.get("cig", {})
+        if isinstance(cig, dict):
+            for lotto_key, cig_val in cig.items():
+                if cig_val and re.match(r'^[A-Z0-9]{10}$', str(cig_val).upper()):
+                    self._add(f"cig_format_{lotto_key}", "pass", f"CIG {lotto_key} valido: {cig_val}")
+                elif cig_val:
+                    self._add(f"cig_format_{lotto_key}", "fail", f"CIG {lotto_key} malformato: {cig_val}")
 
-        if r.cup and not re.match(r'^[A-Z]\d{2}[A-Z]\d{8}$', r.cup.upper().replace(" ", "")):
-            self._add("cup_format", "warn", f"CUP potenzialmente malformato: {r.cup}")
-        elif r.cup:
-            self._add("cup_format", "pass", f"CUP valido: {r.cup}")
+        cup = d.get("cup")
+        if cup and re.match(r'^[A-Z]\d{2}[A-Z]\d{8}\d*$', str(cup).upper().replace(" ", "")):
+            self._add("cup_format", "pass", f"CUP valido: {cup}")
+        elif cup:
+            self._add("cup_format", "warn", f"CUP potenzialmente malformato: {cup}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# UTILITY FUNCTIONS
+# VALIDATION PIPELINE
 # ═════════════════════════════════════════════════════════════════════════════
 
-def _parse_number(val: Optional[str]) -> Optional[float]:
-    """Parsa un numero da stringa, gestendo formato italiano."""
-    if val is None:
-        return None
-    v = str(val).strip()
-    v = re.sub(r'[^\d.,\-]', '', v)
-    if not v:
-        return None
-    # Formato italiano: 1.234,56 → 1234.56
-    if ',' in v and '.' in v:
-        v = v.replace('.', '').replace(',', '.')
-    elif ',' in v:
-        v = v.replace(',', '.')
+def validate_schema(raw_result: dict) -> tuple[dict, list]:
+    """Valida un dict di output contro AppaltoOutput.
+    Ritorna (cleaned_dict, warnings)."""
+    warnings = []
+    # Rimuovi chiavi interne (_*)
+    data = {k: v for k, v in raw_result.items() if not k.startswith("_")}
     try:
-        return float(v)
-    except ValueError:
-        return None
-
-
-def _parse_money(val: Optional[str]) -> Optional[float]:
-    """Parsa un importo monetario."""
-    if val is None:
-        return None
-    v = str(val).strip()
-    v = re.sub(r'[€Ee][Uu][Rr][Oo]|EUR|€|\s', '', v)
-    return _parse_number(v)
-
-
-def _parse_date_it(val: Optional[str]) -> Optional[date]:
-    """Parsa una data italiana in vari formati."""
-    if val is None:
-        return None
-    v = str(val).strip()
-    # dd/mm/yyyy
-    m = re.search(r'(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})', v)
-    if m:
-        try:
-            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-        except ValueError:
-            pass
-    # dd mese yyyy (italiano)
-    mesi = {
-        'gennaio': 1, 'febbraio': 2, 'marzo': 3, 'aprile': 4,
-        'maggio': 5, 'giugno': 6, 'luglio': 7, 'agosto': 8,
-        'settembre': 9, 'ottobre': 10, 'novembre': 11, 'dicembre': 12,
-    }
-    m = re.search(r'(\d{1,2})\s+(\w+)\s+(\d{4})', v.lower())
-    if m:
-        mese = mesi.get(m.group(2))
-        if mese:
-            try:
-                return date(int(m.group(3)), mese, int(m.group(1)))
-            except ValueError:
-                pass
-    return None
-
-
-def validate_extraction(raw_result: dict) -> AppaltoResult:
-    """Converte un dict di estrazione grezza in un AppaltoResult validato."""
-    # Gestisci alias campi
-    field_aliases = {
-        "responsabile_procedimento": "rup",
-        "importo_a_base_di_gara": "importo_base_asta",
-        "importo_a_base_d_asta": "importo_base_asta",
-        "importo_gara": "importo_base_asta",
-        "data_scadenza": "scadenza_offerte",
-        "scadenza": "scadenza_offerte",
-        "termine_offerte": "scadenza_offerte",
-    }
-
-    cleaned = {}
-    for k, v in raw_result.items():
-        # Normalizza chiave
-        k_norm = k.lower().strip().replace(" ", "_")
-        k_canon = field_aliases.get(k_norm, k_norm)
-        if v and str(v).strip() and str(v).strip().lower() not in ("n/a", "non trovato", "-", ""):
-            cleaned[k_canon] = str(v).strip()
-
-    try:
-        result = AppaltoResult(**cleaned)
-    except Exception:
-        # Se Pydantic fallisce, crea con i campi che matchano
-        valid_fields = set(AppaltoResult.model_fields.keys())
-        safe = {k: v for k, v in cleaned.items() if k in valid_fields}
-        result = AppaltoResult(**safe)
-        result.warnings.append("⚠️ Alcuni campi estratti non corrispondono allo schema atteso")
-
-    return result
+        model = AppaltoOutput(**data)
+        return model.model_dump(exclude_none=True), warnings
+    except ValidationError as e:
+        for err in e.errors():
+            loc = " → ".join(str(x) for x in err["loc"])
+            warnings.append(f"Schema: {loc}: {err['msg']}")
+        # Ritorna il dict originale con i warning
+        return data, warnings
 
 
 def full_validation(raw_result: dict) -> dict:
     """Pipeline completa: schema validation + coherence check.
-    Ritorna il risultato validato + report coerenza."""
-    validated = validate_extraction(raw_result)
+    Lavora con la struttura nested (output_schema)."""
+    # Rimuovi chiavi interne per la validazione
+    data = {k: v for k, v in raw_result.items() if not k.startswith("_")}
+
+    # Schema validation
+    cleaned, schema_warnings = validate_schema(data)
+
+    # Coherence validation
     validator = CoherenceValidator()
-    coherence = validator.validate(validated)
-    validated.coherence_score = coherence["coherence_score"]
+    coherence = validator.validate(cleaned)
+
+    # Combina warnings
+    all_warnings = schema_warnings + [
+        c["message"] for c in coherence["details"] if c["status"] in ("fail", "warn")
+    ]
 
     return {
-        "result": validated.model_dump(exclude_none=True),
+        "result": cleaned,
         "coherence": coherence,
-        "warnings": validated.warnings,
+        "warnings": all_warnings,
     }

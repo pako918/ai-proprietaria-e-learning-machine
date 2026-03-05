@@ -30,7 +30,7 @@ import time
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
 
-from config import BASE_DIR, DATA_DIR, MODEL_DIR, DB_PATH
+from config import BASE_DIR, DATA_DIR, MODEL_DIR, DB_PATH, MIN_SAMPLES_TRAIN
 from database import get_connection, init_main_tables
 from utils import (
     clean_string, normalize_amount, parse_number_word,
@@ -41,11 +41,13 @@ from field_registry import registry, get_validator
 from pdf_parser import parse_pdf, get_text_with_tables, get_page_for_text, ParsedDocument
 from schemas import full_validation
 from ml_engine import ml_engine as ml
+from smart_learner import smart_learner
 from extract_disciplinari import (
     extract_rules_based as disciplinari_extract,
     flatten_for_pipeline as disciplinari_flatten,
     extract_text_from_pdf as disciplinari_parse_pdf,
 )
+from json_builder import build_output, build_output_with_methods
 
 logger = get_logger("pipeline")
 
@@ -130,15 +132,104 @@ class RulesExtractor:
             for i in range(1, len(parts) - 1, 2):
                 n = parts[i]; body = parts[i + 1][:2000]
                 cig_m = re.search(r'\bCIG[:\s]*([A-Z0-9]{10})\b', body, re.I)
+                cup_m = re.search(r'\bCUP[:\s]*([A-Z][0-9]{2}[A-Z][0-9]{8})\b', body, re.I)
                 imp_m = re.search(r'(?:importo|base\s+gara)[:\s€]*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?)', body, re.I)
                 desc_m = re.search(r'^(.{10,200})', body.strip())
                 lotti.append({
                     "numero": int(n),
                     "cig": cig_m.group(1) if cig_m else None,
+                    "cup": cup_m.group(1) if cup_m else None,
                     "importo": normalize_amount(imp_m.group(1)) if imp_m else None,
                     "descrizione": clean_string(desc_m.group(1))[:200] if desc_m else None,
                 })
         return lotti
+
+    def extract_categorie_gara(self, text: str) -> list:
+        """Estrae categorie strutturate con codice, descrizione, importo e tipo."""
+        categorie = []
+        seen = set()
+        # Pattern per categorie ingegneria (E.xx, S.xx, IA.xx, etc.) con importo
+        for m in re.finditer(
+            r'\b(E\.?\d{2}|S\.?\d{2}|IA\.?\d{2}|IB\.?\d{2}|D\.?\d{2})\b'
+            r'[^\n]{0,100}?'
+            r'(?:€?\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?))?',
+            text, re.I
+        ):
+            codice = m.group(1).upper()
+            codice = re.sub(r'^(IA|IB|[ESDG])(\d+)$', lambda x: x.group(1) + '.' + x.group(2), codice)
+            if codice in seen:
+                continue
+            seen.add(codice)
+            importo = normalize_amount(m.group(2)) if m.group(2) else None
+            # Cerca descrizione vicina al codice
+            ctx = text[max(0, m.start()-10):m.end()+200]
+            desc_m = re.search(re.escape(m.group(0)) + r'\s*[-–:]\s*([^\n€]{5,120})', ctx, re.I)
+            descrizione = clean_string(desc_m.group(1))[:120] if desc_m else None
+            categorie.append({
+                "codice": codice,
+                "descrizione": descrizione,
+                "importo": importo,
+                "tipo": "SOA" if codice.startswith(("OG", "OS")) else "Ingegneria",
+            })
+        # Pattern per categorie SOA (OG.xx, OS.xx)
+        for m in re.finditer(
+            r'\b(OG\.?\d{1,2}|OS\.?\d{1,2})\b'
+            r'[^\n]{0,100}?'
+            r'(?:€?\s*([0-9]{1,3}(?:[.,][0-9]{3})*(?:[.,][0-9]{2})?))?',
+            text, re.I
+        ):
+            codice = m.group(1).upper()
+            codice = re.sub(r'^(OG|OS)(\d+)$', lambda x: x.group(1) + '.' + x.group(2), codice)
+            if codice in seen:
+                continue
+            seen.add(codice)
+            importo = normalize_amount(m.group(2)) if m.group(2) else None
+            ctx = text[max(0, m.start()-10):m.end()+200]
+            desc_m = re.search(re.escape(m.group(0)) + r'\s*[-–:]\s*([^\n€]{5,120})', ctx, re.I)
+            descrizione = clean_string(desc_m.group(1))[:120] if desc_m else None
+            categorie.append({
+                "codice": codice,
+                "descrizione": descrizione,
+                "importo": importo,
+                "tipo": "SOA",
+            })
+        return categorie
+
+    def extract_figure_professionali(self, text: str) -> list:
+        """Estrae figure professionali richieste con dettagli."""
+        figure = []
+        # Pattern per figure professionali tipiche in bandi di ingegneria/architettura
+        figure_patterns = [
+            r'(?:progettista|coordinatore\s+sicurezza|direttore\s+(?:lavori|tecnico)|'
+            r'geologo|ingegnere|architetto|capogruppo|responsabile\s+integrazione|'
+            r'tecnico\s+acustic[oa]|BIM\s+manager|BIM\s+coordinator|'
+            r'professionista\s+antincendio|esperto\s+ambientale)',
+        ]
+        # Cerca blocchi con figure e requisiti
+        for m in re.finditer(
+            r'(?:figura|professionista|ruolo)\s*(?:\d+)?[:\s-]*\s*'
+            r'([^\n]{5,150})',
+            text, re.I
+        ):
+            block = m.group(1).strip()
+            nome = clean_string(block.split(',')[0].split('–')[0].split('-')[0])[:80]
+            if len(nome) < 3:
+                continue
+            # Cerca esperienza in anni
+            exp_m = re.search(r'(\d+)\s*ann[io]\s*(?:di\s+)?esperienza', block, re.I)
+            esperienza = int(exp_m.group(1)) if exp_m else None
+            # Cerca laurea
+            laurea_m = re.search(r'(?:laurea|diploma)\s+(?:in\s+)?([^\n,;]{5,60})', block, re.I)
+            laurea = clean_string(laurea_m.group(1))[:60] if laurea_m else None
+            # Cerca iscrizione albo
+            albo_m = re.search(r'(?:iscri(?:tto|zione)\s+(?:all\'?\s*)?albo|abilitazione)', block, re.I)
+            figure.append({
+                "nome": nome,
+                "laurea": laurea,
+                "iscrizione_albo": bool(albo_m),
+                "esperienza_anni": esperienza,
+            })
+        return figure[:20]
 
     def extract_categorie_ingegneria(self, text: str) -> list:
         cats = set()
@@ -267,6 +358,7 @@ class RulesExtractor:
         # Lotti
         n_raw = self.first_match(text, pats.get("numero_lotti", [r'(?:suddivisa?\s+in|articolat[ao]\s+in)\s+(\d+|due|tre|quattro|cinque)\s+lott']))
         r["numero_lotti"] = self.parse_number_word(n_raw)
+        r["tipo_gara"] = "MULTILOTTO" if r["numero_lotti"] and r["numero_lotti"] > 1 else "MONOLOTTO"
         r["lotti"] = self.extract_lotti_detail(text)
         r["vincoli_lotti"] = self.extract_vincoli_lotti(text)
 
@@ -300,10 +392,24 @@ class RulesExtractor:
 
         # Categorie, requisiti
         r["categorie_ingegneria"] = self.extract_categorie_ingegneria(text)
+        r["categorie_gara"] = self.extract_categorie_gara(text)
         r["periodo_requisiti_anni"] = self.extract_int(text, pats.get("periodo_requisiti_anni", []))
         r["fatturato_minimo"] = self.normalize_amount(self.first_match(text, pats.get("fatturato_minimo", [])))
         r["polizza_professionale"] = self.first_match(text, pats.get("polizza_professionale", []))
         r["requisiti_soa"] = self.first_match(text, pats.get("requisiti_soa", []))
+
+        # Figure professionali
+        r["cumuli_ammessi"] = bool(re.search(
+            r'cumulo|cumulabil[ei]|ruoli?\s+(?:possono|puo)\s+essere\s+cumulat[io]|'
+            r'(?:ammess[oa]|consentit[oa])\s+(?:il\s+)?cumulo',
+            text, re.I
+        ))
+        r["richiesto_giovane_professionista"] = bool(re.search(
+            r'giovane\s+professionista|professionista\s+(?:abilitato\s+)?da\s+meno\s+di\s+\d+\s+ann[io]|'
+            r'art\.?\s*(?:4|5)[^\n]{0,30}giovane',
+            text, re.I
+        ))
+        r["figure_professionali_dettaglio"] = self.extract_figure_professionali(text)
 
         # Sopralluogo
         sop = self.extract_sopralluogo(text)
@@ -554,7 +660,32 @@ class Pipeline:
                 nested_result = disciplinari_extract(disc_text)
             else:
                 nested_result = disciplinari_extract(text)
-            rules_result, snippets, methods = disciplinari_flatten(nested_result)
+
+            # ── Debug: log nested extraction result structure ──
+            def _log_nested(d, prefix="", depth=0):
+                if depth > 3 or not isinstance(d, dict):
+                    return
+                for k, v in d.items():
+                    if isinstance(v, dict):
+                        non_empty = sum(1 for vv in v.values() if vv not in [None, "", [], {}])
+                        logger.info("  NESTED %s%s: {dict %d keys, %d filled}", prefix, k, len(v), non_empty)
+                        _log_nested(v, f"{prefix}{k}.", depth + 1)
+                    elif isinstance(v, list):
+                        logger.info("  NESTED %s%s: [list %d items]", prefix, k, len(v))
+                    elif v not in [None, "", False, 0]:
+                        val_str = str(v)[:80]
+                        logger.info("  NESTED %s%s: %s", prefix, k, val_str)
+            logger.info("=== NESTED EXTRACTION RESULT (sections: %d) ===", len(nested_result))
+            _log_nested(nested_result)
+
+            rules_result, methods = build_output_with_methods(nested_result)
+            logger.info("=== BUILD_OUTPUT result keys: %d, methods: %d ===",
+                        len(rules_result), len(methods))
+            for k, v in rules_result.items():
+                if not k.startswith("_"):
+                    val_preview = str(v)[:100] if v is not None else "None"
+                    logger.info("  OUTPUT %s: %s", k, val_preview)
+            snippets = {}
         except Exception as _exc:
             # Fallback al vecchio estrattore base se il nuovo fallisce
             import traceback, sys
@@ -562,19 +693,21 @@ class Pipeline:
             traceback.print_exc(file=sys.stderr)
             rules_result, snippets, methods = self.rules.extract(text)
 
-        # FASE 3: NLP classificazione (arricchisce tipo_procedura se mancante)
+        # FASE 3: NLP classificazione (arricchisce tipologia se mancante)
         nlp_tipo = self.nlp.classify_procedure(text)
         if nlp_tipo and nlp_tipo != "Non specificata":
-            if not rules_result.get("tipo_procedura"):
-                rules_result["tipo_procedura"] = nlp_tipo
+            if not rules_result.get("tipologia_appalto"):
+                rules_result["tipologia_appalto"] = nlp_tipo
         nlp_criterio = self.nlp.classify_criterio(text)
         if nlp_criterio and nlp_criterio != "Non specificato":
-            if not rules_result.get("criterio_aggiudicazione"):
-                rules_result["criterio_aggiudicazione"] = nlp_criterio
-        if "tipo_procedura" not in methods and rules_result.get("tipo_procedura"):
-            methods["tipo_procedura"] = "rules"
-        if "criterio_aggiudicazione" not in methods and rules_result.get("criterio_aggiudicazione"):
-            methods["criterio_aggiudicazione"] = "rules"
+            # Inserisci nella tipologia se non già presente
+            tipologia = rules_result.get("tipologia_appalto", "")
+            if tipologia and nlp_criterio.lower() not in tipologia.lower():
+                rules_result["tipologia_appalto"] = f"{tipologia} - {nlp_criterio}"
+            elif not tipologia:
+                rules_result["tipologia_appalto"] = nlp_criterio
+        if "tipologia_appalto" not in methods and rules_result.get("tipologia_appalto"):
+            methods["tipologia_appalto"] = "rules"
 
         # FASE 3b: ML Engine — i modelli imparano schemi dai dati
         rules_result, ml_methods = ml.enhance_result(rules_result, text)
@@ -584,6 +717,22 @@ class Pipeline:
                 ctx = _find_value_context(text, str(rules_result.get(key, "")))
                 if ctx:
                     snippets[key] = ctx
+
+        # FASE 3c: Pattern Appresi — usa pattern strutturali dalle correzioni
+        #   Il PatternLearner impara DOVE trovare i valori (non QUALI)
+        #   Funziona anche per valori mai visti (oggetto, importi, nomi)
+        try:
+            rules_result, pattern_methods = smart_learner.enhance_extraction(
+                rules_result, text
+            )
+            methods.update(pattern_methods)
+            for key in pattern_methods:
+                if key not in snippets:
+                    ctx = _find_value_context(text, str(rules_result.get(key, "")))
+                    if ctx:
+                        snippets[key] = ctx
+        except Exception:
+            pass
 
         # FASE 4: Costruzione JSON (responsabilità del CODICE)
         doc_id = hashlib.sha256((filename + text[:500]).encode()).hexdigest()[:16]
@@ -710,24 +859,51 @@ class Pipeline:
         except Exception:
             pass
 
+        # Feed correzione al Smart Learner — apprendimento pattern strutturali
+        # + auto-training se soglia raggiunta
+        smart_learning_result = None
+        try:
+            smart_learning_result = smart_learner.on_correction(
+                field, corrected, original, full_text, doc_id
+            )
+        except Exception:
+            pass
+
         count = self._get_sample_count(field)
         ml_data = ml.data.get_all_fields()
         ml_count = ml_data.get(field, 0)
-        can_train = ml_count >= 3
+        can_train = ml_count >= MIN_SAMPLES_TRAIN
+
+        # Info apprendimento progressivo
+        patterns_learned = 0
+        auto_trained = False
+        if smart_learning_result:
+            patterns_learned = len(smart_learning_result.get("patterns_learned", []))
+            auto_trained = smart_learning_result.get("auto_train_triggered", False)
+
+        msg = f"Correzione salvata ({ml_count} campioni ML)."
+        if patterns_learned > 0:
+            msg += f" {patterns_learned} pattern strutturali appresi."
+        if auto_trained:
+            train_status = smart_learning_result.get("auto_train_result", {}).get("status", "")
+            msg += f" Auto-training eseguito ({train_status})."
+        elif can_train:
+            msg += " Puoi addestrare il modello!"
+        else:
+            msg += f" Servono {MIN_SAMPLES_TRAIN - ml_count} campioni in più."
+
         return {
             "status": "ok", "field": field,
             "sample_count": count,
             "ml_samples": ml_count,
             "can_train": can_train,
-            "message": (
-                f"Correzione salvata ({ml_count} campioni ML)."
-                + (" Puoi addestrare il modello!" if can_train
-                   else f" Servono {3 - ml_count} campioni in più.")
-            ),
+            "patterns_learned": patterns_learned,
+            "auto_trained": auto_trained,
+            "message": msg,
         }
 
     # ═══════════════════════════════════════════════════════════════
-    # FASE 8: RETRAINING SUPERVISIONATO (MAI AUTOMATICO)
+    # FASE 8: RETRAINING (supervisionato + auto-training progressivo)
     # ═══════════════════════════════════════════════════════════════
 
     def train_field(self, field: str) -> dict:

@@ -43,9 +43,9 @@ MIN_TEXT_LENGTH = 20
 # ML ENGINE
 # ═════════════════════════════════════════════════════════════════════════════
 
-MIN_SAMPLES_TRAIN = int(os.getenv("APPALTOAI_MIN_SAMPLES", "3"))
+MIN_SAMPLES_TRAIN = int(os.getenv("APPALTOAI_MIN_SAMPLES", "5"))
 MIN_SAMPLES_CV = 6
-MIN_IMPROVEMENT = -0.05
+MIN_IMPROVEMENT = 0.0  # Non accettare modelli peggiori
 DEFAULT_CONFIDENCE_THRESHOLD = float(os.getenv("APPALTOAI_CONFIDENCE_THRESHOLD", "0.30"))
 ML_OVERRIDE_THRESHOLD = 0.85
 

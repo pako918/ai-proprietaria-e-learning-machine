@@ -14,6 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copia il progetto
 COPY server.py pipeline.py field_registry.py pdf_parser.py \
      schemas.py ml_engine.py extract_disciplinari.py \
+     smart_learner.py \
+     output_schema.py json_builder.py \
      config.py database.py utils.py log_config.py \
      index.html ./
 

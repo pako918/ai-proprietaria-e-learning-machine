@@ -280,12 +280,13 @@ class DataStore:
 # ═════════════════════════════════════════════════════════════════════
 
 class _SingleClassModel:
-    """Modello triviale per campi con un solo valore noto."""
+    """Modello triviale per campi con un solo valore noto.
+    Confidenza bassa (0.50) perché un solo esempio non è affidabile."""
     def __init__(self, value):
         self.value = value
 
     def predict(self, text):
-        return self.value, 0.90
+        return self.value, 0.50
 
 
 class FieldModel:

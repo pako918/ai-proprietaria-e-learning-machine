@@ -346,7 +346,7 @@ if HAS_FASTAPI:
         from ml_engine import ml_engine as ml_eng
         return ml_eng.get_model_versions(field)
 
-    # ══════════════════════════════════════════════════════════════════    # PIPELINE STATUS
+    # ══════════════════════════════════════════════════════════════════════    # PIPELINE STATUS
     # ══════════════════════════════════════════════════════════════════════
 
     @app.get("/api/pipeline/status")
@@ -357,11 +357,43 @@ if HAS_FASTAPI:
         return {
             "pipeline_version": API_VERSION,
             "architecture": "ML-powered extraction",
-            "learning_mode": "data-driven supervised",
+            "learning_mode": "progressive autonomous",
             "ml_engine": ml_status,
             "stats": stats,
             "models": versions,
         }
+
+    # ══════════════════════════════════════════════════════════════════
+    # SMART LEARNER — Apprendimento progressivo autonomo
+    # ══════════════════════════════════════════════════════════════════
+
+    @app.get("/api/learning/status")
+    async def learning_status():
+        """Stato completo del sistema di apprendimento progressivo:
+        pattern appresi, auto-training, valutazione qualità."""
+        from smart_learner import smart_learner as sl
+        return sl.get_full_status()
+
+    @app.get("/api/learning/patterns/{field}")
+    async def learning_patterns(field: str):
+        """Pattern strutturali appresi per un campo specifico."""
+        from smart_learner import smart_learner as sl
+        return sl.patterns.get_field_stats(field)
+
+    @app.get("/api/learning/evaluation")
+    async def learning_evaluation():
+        """Valutazione qualità estrazioni con trend e campi problematici."""
+        from smart_learner import smart_learner as sl
+        return {
+            "field_quality": sl.evaluator.evaluate_field_quality(),
+            "problematic_fields": sl.evaluator.get_problematic_fields(),
+        }
+
+    @app.get("/api/learning/auto-train")
+    async def auto_train_status():
+        """Stato dell'auto-trainer: correzioni pendenti, soglie, storico."""
+        from smart_learner import smart_learner as sl
+        return sl.auto_trainer.get_status()
 
     # ── LEGACY COMPATIBILITY STUBS ────────────────────────────────────────
     # Endpoint vecchi restituiscono risposte vuote compatibili
@@ -372,7 +404,8 @@ if HAS_FASTAPI:
 
     @app.get("/api/auto-learn/stats")
     async def auto_learn_stats():
-        return {"message": "Auto-learning disabilitato. Usa training supervisionato.", "auto_learn": False}
+        from smart_learner import smart_learner as sl
+        return sl.auto_trainer.get_status()
 
     @app.post("/api/quarantine/{qid}/approve")
     async def approve_quarantine(qid: int):

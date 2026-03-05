@@ -174,8 +174,26 @@ BUILTIN_FIELDS: List[FieldDef] = [
     FieldDef("oggetto_appalto", "Oggetto Appalto", "📋", "Oggetto e Procedura", "text",
              highlight=True, full_width=True,
              patterns=[
-                 r"(?:OGGETTO|Oggetto\s+dell['’]?\s*appalto)[\s:\u2013\-]*\n?\s*([^\n]{10,300})",
-                 r'avente\s+(?:per|ad)\s+oggetto[\s:]*([^\n]{10,300})',
+                 # Pattern label esplicita: "OGGETTO: ..."
+                 r"(?:OGGETTO|Oggetto\s+dell['\u2019]?\s*appalto)[\s:\u2013\-]+\n?\s*([^\n]{10,500})",
+                 # "avente per/ad oggetto ..."
+                 r'avente\s+(?:per|ad)\s+oggetto[\s:]+([^\n]{10,500})',
+                 # "PROCEDURA ... PER/RELATIVA ..." (titolo tipo intestazione)
+                 r'PROCEDURA\s+(?:APERTA|NEGOZIATA|RISTRETTA|COMPETITIVA)\s+(?:PER|RELATIVA\s+A)\s+(?:IL\s+|LA\s+|L[\u2019\']|AL\s+|ALLA\s+)?(.+?)(?:\n(?:CIG|CUP|Pag\.|Art\.))',
+                 # "DISCIPLINARE DI GARA ... per/relativo ..."
+                 r'DISCIPLINARE\s+DI\s+GARA\s+(?:PER|RELATIV[OA]\s+A)\s+(?:IL\s+|LA\s+|L[\u2019\'])?(.+?)(?:\n(?:CIG|CUP|Pag\.))',
+                 # "BANDO DI GARA PER ..."
+                 r'BANDO\s+DI\s+GARA\s+(?:PER|RELATIV[OA]\s+A)\s+(?:IL\s+|LA\s+|L[\u2019\'])?(.+?)(?:\n(?:CIG|CUP|Pag\.))',
+                 # "Oggetto:" su una riga, valore sulla successiva
+                 r'(?:^|\n)\s*OGGETTO\s*[:\n]\s*\n\s*([^\n]{10,500})',
+                 # "1. Oggetto dell'appalto" → paragrafo successivo
+                 r'(?:\d+[.)\s]+)?(?:OGGETTO|Oggetto)\s+(?:DELL[\u2019\']?\s*)?(?:APPALTO|GARA|AFFIDAMENTO|SERVIZIO|INCARICO)[\s:.\-]*\n+\s*([^\n]{10,500})',
+                 # "Appalto di/dei/per ..."
+                 r'(?:^|\n)\s*APPALTO\s+(?:DEI|DI|PER)\s+(.+?)(?:\n(?:CIG|CUP|Pag\.))',
+                 # "AFFIDAMENTO dell'incarico / del servizio / dei lavori di ..."
+                 r'AFFIDAMENTO\s+(?:DELL[\u2019\']?\s*INCARICO|DEL\s+SERVIZIO|DEI\s+(?:LAVORI|SERVIZI))\s+(?:DI\s+|PER\s+)?(.+?)(?:\n(?:CIG|CUP|Pag\.))',
+                 # "GARA ... PER ..."
+                 r'GARA\s+(?:(?:EUROPEA|COMUNITARIA|PUBBLICA)\s+)?(?:PER|RELATIVA)\s+(?:A\s+)?(?:IL\s+|LA\s+|L[\u2019\'])?(.+?)(?:\n(?:CIG|CUP|Art\.))',
              ],
              validator_type="text"),
     FieldDef("tipo_procedura", "Tipo Procedura", "⚖️", "Oggetto e Procedura", "text",

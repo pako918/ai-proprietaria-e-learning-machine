@@ -216,21 +216,78 @@ def _find_all_euros(text_fragment: str) -> list[float]:
 
 
 def _section_text(full_text: str, start_patterns: list[str], end_patterns: list[str], max_len: int = 15000) -> str:
-    """Estrae il testo di una sezione delimitata da heading iniziale e finale."""
+    """Estrae il testo di una sezione delimitata da heading iniziale e finale.
+
+    Supporta:
+    - Match esatto case-insensitive (originale)
+    - Match con numeri/punti variabili prima del heading (es. "10." → "10.1")
+    - Match con spazi/newline interni (il PDF potrebbe spezzare le parole)
+    """
     text_lower = full_text.lower()
     start_idx = -1
+
+    def _is_toc_entry(pos: int) -> bool:
+        """Controlla se la posizione trovata è una voce dell'Indice/TOC (con '......')."""
+        after = full_text[pos:pos + 300]
+        # Le voci TOC hanno puntini dopo il titolo: "TITOLO SEZIONE ......... 34"
+        return bool(re.search(r"\.{5,}", after))
+
     for pat in start_patterns:
-        idx = text_lower.find(pat.lower())
-        if idx >= 0:
-            start_idx = idx
+        pat_lower = pat.lower()
+        # 1) Match esatto (salta voci TOC)
+        search_from = 0
+        while True:
+            idx = text_lower.find(pat_lower, search_from)
+            if idx < 0:
+                break
+            if not _is_toc_entry(idx):
+                start_idx = idx
+                break
+            search_from = idx + len(pat_lower)
+        if start_idx >= 0:
             break
+        # 2) Match con spazi/newline flessibili tra le parole
+        words = pat_lower.split()
+        if len(words) >= 2:
+            flex_pat = r"\s+".join(re.escape(w) for w in words)
+            for m in re.finditer(flex_pat, text_lower):
+                if not _is_toc_entry(m.start()):
+                    start_idx = m.start()
+                    break
+        if start_idx >= 0:
+            break
+        # 3) Match con prefisso numerico variabile (es. "10. GARANZIA" → cerca solo "GARANZIA")
+        stripped = re.sub(r"^\d+[\.\)]\s*", "", pat_lower).strip()
+        if stripped and stripped != pat_lower and len(stripped) > 5:
+            search_from = 0
+            while True:
+                idx = text_lower.find(stripped, search_from)
+                if idx < 0:
+                    break
+                if not _is_toc_entry(max(0, idx - 20)):
+                    start_idx = max(0, idx - 20)
+                    break
+                search_from = idx + len(stripped)
+            if start_idx >= 0:
+                break
+
     if start_idx < 0:
         return ""
+
     end_idx = len(full_text)
-    for pat in end_patterns:
-        idx = text_lower.find(pat.lower(), start_idx + 50)
+    for ep in end_patterns:
+        ep_lower = ep.lower()
+        idx = text_lower.find(ep_lower, start_idx + 50)
         if idx >= 0 and idx < end_idx:
             end_idx = idx
+            continue
+        # Prova senza prefisso numerico
+        stripped = re.sub(r"^\d+[\.\)]\s*", "", ep_lower).strip()
+        if stripped and stripped != ep_lower and len(stripped) > 5:
+            idx = text_lower.find(stripped, start_idx + 50)
+            if idx >= 0 and idx < end_idx:
+                end_idx = idx
+
     return full_text[start_idx : min(start_idx + max_len, end_idx)]
 
 
@@ -303,30 +360,68 @@ def extract_rules_based(text: str) -> dict:
     # ======================================================================
 
     # --- Titolo / Oggetto dell'appalto ---
-    # Cerchiamo pattern comuni dell'intestazione
+    # Strategia multi-livello per massimizzare il recupero
+    # Cerchiamo solo nei primi 8000 car (il titolo è sempre nell'intestazione)
+    _titolo_text = text[:8000]
     titolo_patterns = [
-        r"(?:PROCEDURA\s+(?:APERTA|NEGOZIATA|RISTRETTA)\s+(?:PER|RELATIVA)\s+(?:IL|LA|L['\u2019]|AL|ALLA)\s+)(.*?)(?:\n(?:CIG|CUP|Pag\.|Disciplinare|DISCIPLINARE)|$)",
-        r"(?:OGGETTO\s*:\s*)(.*?)(?:\n\n|\n(?:CIG|CUP))",
-        r"(?:APPALTO\s+(?:DEI|DI|PER)\s+)(.*?)(?:\n(?:CIG|CUP|Pag\.))",
+        # Livello 1: label esplicita "OGGETTO: ..." o "Oggetto dell'appalto: ..."
+        r"(?:OGGETTO\s+DELL[\u2019']?\s*APPALTO|OGGETTO\s+DELLA\s+GARA|OGGETTO\s+DELL[\u2019']?\s*AFFIDAMENTO|OGGETTO)\s*[:\s\u2013\-]+\s*([^\n]+(?:\n(?!CIG|CUP|Art\.|\d+[.)\s]+[A-Z]|\s*\n)[^\n]+)*)",
+        # Livello 2: "PROCEDURA ... PER ..." nell'intestazione
+        r"(?:PROCEDURA\s+(?:APERTA|NEGOZIATA|RISTRETTA|COMPETITIVA)\s+(?:PER|RELATIVA\s+A)\s+(?:IL\s+|LA\s+|L[\u2019']|AL\s+|ALLA\s+)?)([^\n]+(?:\n(?!CIG|CUP|Pag\.|Disciplinare|DISCIPLINARE|Importo|\d+[.)\s]+[A-Z]|\s*\n)[^\n]+)*)",
+        # Livello 3: "avente per/ad oggetto ..."
+        r"avente\s+(?:per|ad)\s+oggetto\s*[:\s]+([^\n]+(?:\n(?!CIG|CUP|Art\.|\s*\n)[^\n]+)*)",
+        # Livello 4: "DISCIPLINARE DI GARA PER ..."
+        r"DISCIPLINARE\s+DI\s+GARA\s+(?:PER|RELATIV[OA]\s+A)\s+(?:IL\s+|LA\s+|L[\u2019'])?([^\n]+(?:\n(?!CIG|CUP|Pag\.|\s*\n)[^\n]+)*)",
+        # Livello 4b: "DISCIPLINARE DI GARA" seguito da paragrafo descrittivo (senza PER)
+        r"DISCIPLINARE\s+DI\s+GARA\s*\n\s*([^\n]{25,}(?:\n(?!\s*\(?CUP|\(?CIG|\d+[.)\s]+[A-Z]|\s*\n)[^\n]+)*)",
+        # Livello 5: "APPALTO DI/DEI/PER ..."
+        r"(?:APPALTO|AFFIDAMENTO)\s+(?:DEI|DI|DEL|PER)\s+([^\n]+(?:\n(?!CIG|CUP|Pag\.|Importo|\s*\n)[^\n]+)*)",
+        # Livello 6: "BANDO DI GARA PER ..."
+        r"BANDO\s+DI\s+GARA\s+(?:PER|RELATIV[OA]\s+A)\s+(?:IL\s+|LA\s+|L[\u2019'])?([^\n]+(?:\n(?!CIG|CUP|Pag\.|\s*\n)[^\n]+)*)",
+        # Livello 7: "GARA ... PER ..."
+        r"GARA\s+(?:(?:EUROPEA|COMUNITARIA|PUBBLICA)\s+)?(?:PER|RELATIVA)\s+(?:A\s+)?(?:IL\s+|LA\s+|L[\u2019'])?([^\n]+(?:\n(?!CIG|CUP|Art\.|\s*\n)[^\n]+)*)",
+        # Livello 8: "OGGETTO: " su una riga, valore sulla successiva
+        r"(?:^|\n)\s*OGGETTO\s*[:\n]\s*\n\s*([^\n]{10,500})",
+        # Livello 9: articolo numerato con oggetto
+        r"(?:\d+[.)\s]+)?(?:OGGETTO|Oggetto)\s+(?:dell[\u2019']?\s*)?(?:appalto|gara|affidamento|servizio|incarico)\s*[:.\-]*\n+\s*([^\n]{10,500})",
     ]
+    # Parole che non dovrebbero apparire in un titolo
+    _titolo_nope = {"importo", "euro ", "ribasso", "oneri sicurezza", "soggett"}
     for pat in titolo_patterns:
-        m = re.search(pat, text, re.IGNORECASE | re.DOTALL)
+        m = re.search(pat, _titolo_text, re.IGNORECASE)
         if m:
             titolo = _clean(m.group(1))
             if titolo and len(titolo) > 15:
-                ig["titolo"] = titolo[:500]
-                break
+                # Tronca a frasi significative (rimuovi coda con importi/numeri)
+                titolo = re.split(r"(?:Importo|CIG|CUP|Euro\s+[\d.]|Pag\.\s*\d)", titolo, flags=re.IGNORECASE)[0]
+                titolo = _clean(titolo)
+                if titolo and len(titolo) > 15 and not any(nw in titolo.lower() for nw in _titolo_nope):
+                    ig["titolo"] = titolo[:500]
+                    break
 
-    # Se non troviamo un titolo strutturato, prendiamo la prima riga sostanziosa
+    # Fallback multi-step: prima riga sostanziosa nell'intestazione
     if "titolo" not in ig:
-        header_lines = text[:3000].split("\n")
+        # Prova con header più ampio e keyword più estese
+        header_lines = text[:5000].split("\n")
+        candidates = []
         for line in header_lines:
             line = line.strip()
-            if len(line) > 30 and any(kw in line.lower() for kw in
-                ["servizi", "appalto", "progett", "affidamento", "procedura", "lavori",
-                 "ingegneria", "architettura", "direzione", "coordinamento"]):
-                ig["titolo"] = _clean(line)[:500]
-                break
+            if len(line) < 25:
+                continue
+            line_lower = line.lower()
+            kw_count = sum(1 for kw in [
+                "servizi", "appalto", "progett", "affidamento", "procedura",
+                "lavori", "ingegneria", "architettura", "direzione",
+                "coordinamento", "fornitura", "manutenzione", "realizzazione",
+                "costruzione", "ristrutturazione", "adeguamento", "restauro",
+                "incarico", "consulenza", "assistenza"
+            ] if kw in line_lower)
+            if kw_count > 0:
+                candidates.append((kw_count, len(line), line))
+        if candidates:
+            # Prendi la riga con più keyword (a parità, la più lunga)
+            candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
+            ig["titolo"] = _clean(candidates[0][2])[:500]
 
     # --- Stazione appaltante ---
     sa = {}
@@ -405,23 +500,31 @@ def extract_rules_based(text: str) -> dict:
 
     # --- RUP ---
     rup = {}
+    _rup_false = {"responsabile", "procedimento", "progetto", "documento",
+                  "informatico", "firmato", "digitale", "unico", "servizio",
+                  "direzione", "settore", "procedura", "affidamento",
+                  "email", "pec", "tel", "telefono", "fax", "indirizzo"}
     rup_patterns = [
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento|progetto\s+e\s+del\s+procedimento))[,.\s:]*(?:è\s+)?(?:il\s+|la\s+)?(?:responsabile[^\n]*?,\s*)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+){1,3})",
-        r"(?:R\.?U\.?P\.?|Responsabile\s+del\s+(?:Progetto|Procedimento))\s*[:\-]\s*(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?)\s+)?([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+){1,3})",
-        # Pattern con newline/testo intermedio + titolo case-insensitive
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento|progetto\s+e\s+del\s+procedimento)).{0,300}?(?:[Dd]ott\.?(?:ssa)?|[Ii]ng\.?|[Aa]rch\.?|[Gg]eom\.?|[Pp]rof\.?)\s+([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+){1,3})",
-        # Pattern per "è l'arch./ing. Nome Cognome"
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:è\s+)?l['’]([Aa]rch|[Ii]ng|[Dd]ott)\.?\s+([A-Z][a-zàèéìòù]+(?:\s+[A-Z][a-zàèéìòù]+){1,3})",
+        # Pattern 0: "RUP: Responsabile ..., Ing. Nome Cognome"
+        r"(?:R\.?U\.?P\.?)\s*[:\s]+(?:[Rr]esponsabile[^\n]*?,\s*)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        # Pattern 1: "Responsabile ... Procedimento, Ing. Nome Cognome"
+        r"[Rr]esponsabile\s+(?:[Uu]nico\s+)?(?:del\s+)?(?:[Pp]rogetto|[Pp]rocedimento|procedimento\s+e\s+del\s+progetto)[,.\s:]+(?:(?:(?:è|e)\s+)?(?:il\s+|la\s+)?)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        # Pattern 2: "R.U.P. ... Ing. Nome Cognome" con testo intermedio
+        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:[Dd]ott\.?(?:ssa)?|[Ii]ng\.?|[Aa]rch\.?|[Gg]eom\.?|[Pp]rof\.?)\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        # Pattern 3: "l'arch./ing. Nome Cognome"
+        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:(?:è|e)\s+)?l['’]([Aa]rch|[Ii]ng|[Dd]ott)\.?\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
     ]
     for i, pat in enumerate(rup_patterns):
         m = re.search(pat, text, re.DOTALL)
         if m:
-            # L'ultimo pattern ha 2 gruppi (titolo, nome)
-            if i == len(rup_patterns) - 1:
-                rup["nome"] = _clean(m.group(2))
-            else:
-                rup["nome"] = _clean(m.group(1))
-            break
+            candidate = _clean(m.group(2) if i == len(rup_patterns) - 1 else m.group(1))
+            if candidate:
+                # Rimuove parole spurie in coda (Email, Tel, Pec, ecc.)
+                candidate = re.sub(r'\s+(?:Email|Pec|Tel|Telefono|Fax|Indirizzo|Documento|Firmato)\b.*', '', candidate)
+                candidate = _clean(candidate)
+            if candidate and not any(w in candidate.lower() for w in _rup_false):
+                rup["nome"] = candidate
+                break
 
     # Qualifica RUP
     if rup.get("nome"):
@@ -464,7 +567,18 @@ def extract_rules_based(text: str) -> dict:
         ig["determina_a_contrarre"] = det
 
     # --- CIG ---
-    cigs = re.findall(r"CIG[:\s]*([A-Z0-9]{10,})", text)
+    # Standard format: CIG followed by 10+ alphanumeric chars
+    cigs = re.findall(r"CIG[:\s]*([A-Za-z0-9]{10,})", text)
+    if not cigs:
+        # Try with spaces/separators inside: "CIG: A04F 9CC1 1A" → join
+        cig_spaced = re.findall(r"CIG[:\s]*((?:[A-Za-z0-9]{2,5}\s*){3,})", text)
+        for cs in cig_spaced:
+            cleaned = re.sub(r'\s+', '', cs)
+            if len(cleaned) >= 10:
+                cigs.append(cleaned)
+    if not cigs:
+        # Try with "Codice CIG" or "cod. CIG"
+        cigs = re.findall(r"(?:Codice|cod\.?)\s+CIG[:\s]*([A-Za-z0-9]{10,})", text, re.IGNORECASE)
     if cigs:
         unique_cigs = list(dict.fromkeys(cigs))
         ig["CIG"] = unique_cigs[0]
@@ -583,6 +697,17 @@ def extract_rules_based(text: str) -> dict:
         "stella": ("S.TEL.LA.", "Regione Lazio"),
         "traspare": ("TrasparE", None),
         "sardegna cat": ("SardegnaCat", "Regione Sardegna"),
+        "empulia": ("EmPULIA", "InnovaPuglia"),
+        "gare telematiche": ("Gare Telematiche", None),
+        "appalti&contratti": ("Appalti&Contratti", None),
+        "portale appalti": ("Portale Appalti", None),
+        "maggioli": ("Maggioli", None),
+        "asmecomm": ("Asmecomm", None),
+        "intercent-er": ("Intercent-ER", "Regione Emilia-Romagna"),
+        "intercenter": ("Intercent-ER", "Regione Emilia-Romagna"),
+        "ariaspa": ("Sintel", "ARIA S.p.A."),
+        "albofornitori": ("Albo Fornitori", None),
+        "e-procurement": ("e-Procurement", None),
     }
     for key, (nome, gestore) in piattaforme_map.items():
         # Usa word boundary per evitare falsi positivi (es. 'mepa' in 'HomePage')
@@ -593,9 +718,14 @@ def extract_rules_based(text: str) -> dict:
             break
 
     # URL piattaforma
-    m_url = re.search(r"(?:https?://[^\s\n]+(?:aria|sintel|tuttogare|net4market|traspare|mepa|acquistinrete|start\.toscana)[^\s\n]*)", text, re.IGNORECASE)
+    m_url = re.search(r"(?:https?://[^\s\n]+(?:aria|sintel|tuttogare|net4market|traspare|mepa|acquistinrete|start\.toscana|empulia|intercent|maggioli|asmecomm|appalti|gare)[^\s\n]*)", text, re.IGNORECASE)
     if m_url:
-        pt["url"] = m_url.group(0).rstrip(".")
+        pt["url"] = m_url.group(0).rstrip(".,;)")
+    elif not pt.get("url"):
+        # Fallback: any URL near "piattaforma" or "telematica"
+        m_url_gen = re.search(r"(?:piattaforma|telematica)[^.]{0,200}?(https?://[^\s\n]+)", text, re.IGNORECASE)
+        if m_url_gen:
+            pt["url"] = m_url_gen.group(1).rstrip(".,;)")
 
     # ======================================================================
     # D) LOTTI E IMPORTI
@@ -617,28 +747,38 @@ def extract_rules_based(text: str) -> dict:
 
     # Importo totale complessivo
     imp_patterns = [
-        # Pattern specifici che richiedono il contesto "importo complessivo / base di gara"
-        r"[Ii]mporto\s+complessivo\s+(?:Euro|€|di\s+€)\s*([\d.,]+)",
-        r"importo\s+complessivo[^€Ç\d]{0,80}?(?:pari\s+ad|ammonta\s+a)\s*[€Ç]\s*\.?\s*([\d.,]+)",
-        r"(?:base\s+di\s+gara|base\s+d['\u2019]asta)[^€Ç\d]{0,60}?(?:pari\s+ad|ammonta\s+a)\s*[€Ç]\s*\.?\s*([\d.,]+)",
-        r"[Ii]mporto\s+(?:a\s+)?base\s+(?:di\s+|d['\u2019])?(?:gara|asta)\s*[€Ç:]\s*\.?\s*([\d.,]+)",
+        # "importo globale della procedura è pari a € X"
+        r"importo\s+globale[^€Ç\d]{0,100}?(?:pari\s+ad?\s+)?(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        # Più specifici: "importo complessivo dell'appalto ... Euro/€ X"
+        r"importo\s+complessivo\s+dell['\u2019\s]\s*appalto[^€Ç\d]{0,80}?(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"importo\s+complessivo\s+(?:Euro|€|di\s+€)\s*([\d.,]+)",
+        r"importo\s+complessivo[^€Ç\d]{0,40}?(?:Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"importo\s+complessivo[^€Ç\d]{0,80}?(?:pari\s+ad?|ammonta\s+a)\s*(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"importo\s+complessivo[^€Ç\d]{0,120}?(?:di|pari\s+a|per)\s+(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        # "Base di gara" / "importo a base di gara" — con contesto pari/ammonta
+        r"(?:base\s+di\s+gara|base\s+d['\u2019]asta)[^€Ç\d]{0,60}?(?:pari\s+ad?|ammonta\s+a)\s*(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"importo\s+(?:a\s+)?base\s+(?:di\s+|d['\u2019])?(?:gara|asta)\s*[€Ç:]\s*\.?\s*([\d.,]+)",
+        # "Importo a base di gara ... Euro X" (solo se non preceduto da %, garanzia)
+        r"(?:^|[\n.])(?:[^%\n]{0,20})importo\s+(?:a\s+)?base\s+(?:di\s+|d['\u2019])?(?:gara|asta)[^€Ç\d]{0,40}?(?:Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
         # Valore concessione / STIMA TOTALE
-        r"STIMA\s+TOTALE\s+DEL\s+VALORE[^€Ç\d]{0,80}?[€Ç]\s*\.?\s*([\d.,]+)",
-        r"[Vv]alore\s+(?:del(?:la)?\s+)?(?:contratto\s+di\s+)?concessione[^€Ç\d]{0,80}?(?:€|Ç|euro)\s*\.?\s*([\d.,]+)",
-        r"[Vv]alore\s+(?:del(?:la)?\s+)?concessione[^€Ç\d]{0,80}?(?:pari\s+a|determinat\w+\s+in)\s*[:\s]*(?:€|Ç|euro)\s*\.?\s*([\d.,]+)",
+        r"STIMA\s+TOTALE\s+DEL\s+VALORE[^€Ç\d]{0,80}?(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"valore\s+(?:del(?:la)?\s+)?(?:contratto\s+di\s+)?concessione[^€Ç\d]{0,80}?(?:€|Ç|euro|Euro)\s*\.?\s*([\d.,]+)",
+        r"valore\s+(?:del(?:la)?\s+)?concessione[^€Ç\d]{0,80}?(?:pari\s+a|determinat\w+\s+in)\s*[:\s]*(?:€|Ç|euro|Euro)\s*\.?\s*([\d.,]+)",
         r"(?:determinat\w+\s+in|pari\s+a)\s*[:\s]*euro\s+([\d.,]+(?://\d{2})?)",
         # Pattern generici
         r"importo\s+totale\s+(?:stimat\w+\s+)?(?:dell['\u2019]appalto\s+)?(?:€|Euro|:)?\s*(?:pari\s+a\s+)?(?:€\s*)?([\d.,]+)",
-        r"[Vv]alore\s+globale\s+dell['\u2019]?\s*[Aa]ppalto[^\d]{0,60}?([\d.,]+)",
-        r"[Vv]alore\s+massimo\s+stimato[^\d]{0,80}?(?:Euro|€)\s*([\d.,]+)",
+        r"valore\s+globale\s+dell['\u2019]?\s*appalto[^\d]{0,60}?([\d.,]+)",
+        r"valore\s+massimo\s+stimato[^\d]{0,80}?(?:Euro|€)\s*([\d.,]+)",
         r"importo\s+complessivo[^€Ç\d]{0,80}?[€Ç]\s*\.?\s*([\d.,]+)",
-        r"[Ii]mporto\s+dell['\u2019]?\s*appalto\s*\n?\s*€\s*([\d.,]+)",
-        r"[Ii]mporto\s+dell['\u2019]?\s*appalto\s*[:\s]*€\s*([\d.,]+)",
-        r"(?:fissato|stabilito)\s+in\s*[€Ç]\s*\.?\s*([\d.,]+)",
+        r"importo\s+dell['\u2019]?\s*appalto\s*\n?\s*(?:€|Euro)\s*([\d.,]+)",
+        r"importo\s+dell['\u2019]?\s*appalto\s*[:\s]*(?:€|Euro)\s*([\d.,]+)",
+        r"(?:fissato|stabilito)\s+in\s*(?:€|Ç|Euro|euro)\s*\.?\s*([\d.,]+)",
         r"TOTALE\s*[€Ç]\s*\.?\s*([\d.,]+)",
+        # Numero + "euro/EUR" dopo keywords importo (cattura retroattiva)
+        r"(?:importo\s+complessivo|importo\s+totale|base\s+di\s+gara|base\s+d['\u2019]asta)[^.]{0,100}?([\d.,]+)\s*(?:€|Euro|euro|EUR)",
     ]
     for pat in imp_patterns:
-        m = re.search(pat, text)
+        m = re.search(pat, text, re.IGNORECASE)
         if m:
             raw_val = m.group(1)
             # Gestisce formato "29.905.519//00" → rimuove //00
@@ -651,8 +791,10 @@ def extract_rules_based(text: str) -> dict:
     # Importo soggetto a ribasso (deve contenere €/Euro/euro e valore > 100)
     rib_patterns = [
         r"soggett\w+\s+a\s+ribasso[^\n]{0,60}?[€]\s*([\d.,]+)",
-        r"soggett\w+\s+a\s+ribasso[^\n]{0,60}?(?:Euro|euro)\s*([\d.,]+)",
+        r"soggett\w+\s+a\s+ribasso[^\n]{0,60}?(?:Euro|euro|EUR)\s*([\d.,]+)",
         r"soggett\w+\s+a\s+ribasso\s*(?:\([^)]*\))?\s*[:\n]\s*[€]?\s*([\d.,]+)",
+        r"soggett\w+\s+a\s+ribasso[^\n]{0,80}?([\d.,]+)\s*(?:€|Euro|euro|EUR)",
+        r"ribasso[^.]{0,80}?(?:€|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
     ]
     for pat in rib_patterns:
         m_rib = re.search(pat, text, re.IGNORECASE)
@@ -663,11 +805,19 @@ def extract_rules_based(text: str) -> dict:
                 break
 
     # Oneri sicurezza
-    m_on = re.search(r"oneri\s+(?:per\s+la\s+)?sicurezza[^€Ç\d]{0,50}[€Ç\s]*([\d.,]+)", text, re.IGNORECASE)
-    if m_on:
-        val = _parse_euro(m_on.group(1))
-        if val:
-            ic["oneri_sicurezza"] = val
+    oneri_patterns = [
+        r"oneri\s+(?:per\s+la\s+)?sicurezza[^€Ç\d]{0,50}[€Ç\s]*([\d.,]+)",
+        r"oneri\s+(?:per\s+la\s+)?sicurezza[^€Ç\d]{0,60}?(?:Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"oneri\s+(?:della\s+)?sicurezza[^€Ç\d]{0,60}?(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+        r"costi?\s+(?:della\s+|per\s+la\s+)?sicurezza[^€Ç\d]{0,60}?(?:€|Ç|Euro|euro|EUR)\s*\.?\s*([\d.,]+)",
+    ]
+    for on_pat in oneri_patterns:
+        m_on = re.search(on_pat, text, re.IGNORECASE)
+        if m_on:
+            val = _parse_euro(m_on.group(1))
+            if val:
+                ic["oneri_sicurezza"] = val
+                break
 
     # Importo lavori
     m_lav = re.search(r"importo\s+(?:dei\s+)?lavori[^€Ç\d]{0,50}[€Ç\s]*([\d.,]+)", text, re.IGNORECASE)
@@ -703,16 +853,33 @@ def extract_rules_based(text: str) -> dict:
     for lotto_n in range(1, sl["numero_lotti"] + 1):
         lotto_data = {"numero": lotto_n}
 
-        # Sezione del lotto
+        # Sezione del lotto — cerca la prima occorrenza "sostanziale"
+        # (skippa menzioni brevi come "(Lotto 1)" nell'intro)
         lotto_patterns = [
             f"lotto\\s*(?:n\\.?\\s*)?{lotto_n}\\b",
             f"LOTTO\\s*{lotto_n}\\b",
         ]
         lotto_start = -1
         for lp in lotto_patterns:
-            m = re.search(lp, text, re.IGNORECASE)
-            if m:
-                lotto_start = m.start()
+            search_from = 0
+            while True:
+                m = re.search(lp, text[search_from:], re.IGNORECASE)
+                if not m:
+                    break
+                candidate = search_from + m.start()
+                # Calcola la lunghezza fino al prossimo lotto o sezione
+                next_lotto = re.search(
+                    f"(?:lotto\\s*(?:n\\.?\\s*)?{lotto_n + 1}\\b|^\\d+\\.\\s+[A-Z])",
+                    text[candidate + 20:],
+                    re.IGNORECASE | re.MULTILINE,
+                )
+                segment_len = next_lotto.start() + 20 if next_lotto else 8000
+                if segment_len >= 200:
+                    lotto_start = candidate
+                    break
+                # Troppo corto — probabilmente menzione breve, prova la successiva
+                search_from = candidate + len(m.group(0))
+            if lotto_start >= 0:
                 break
 
         if lotto_start >= 0:
@@ -744,6 +911,28 @@ def extract_rules_based(text: str) -> dict:
                 v = _parse_euro(imp_base.group(1))
                 if v:
                     lotto_data["importo_base_asta"] = v
+
+            # "Valore appalto € X" / "Valore appalto complessivo € X"
+            if "importo_base_asta" not in lotto_data:
+                imp_valore = re.search(
+                    r"[Vv]alore\s+appalto\s*(?:complessivo)?\s*€\s*([\d.,]+)",
+                    lotto_text, re.IGNORECASE,
+                )
+                if imp_valore:
+                    v = _parse_euro(imp_valore.group(1))
+                    if v and v > 100:
+                        lotto_data["importo_base_asta"] = v
+
+            # "importo contrattuale complessivo pari a € X"
+            if "importo_base_asta" not in lotto_data:
+                imp_contr = re.search(
+                    r"importo\s+contrattuale\s+(?:complessivo\s+)?pari\s+a\s*€?\s*([\d.,]+)",
+                    lotto_text, re.IGNORECASE,
+                )
+                if imp_contr:
+                    v = _parse_euro(imp_contr.group(1))
+                    if v and v > 100:
+                        lotto_data["importo_base_asta"] = v
 
             # Importo soggetto a ribasso nel lotto
             m_rib_l = re.search(r"soggett\w+\s+a\s+ribasso[^€Ç\d]{0,50}[€Ç\s]*([\d.,]+)", lotto_text, re.IGNORECASE)
@@ -826,11 +1015,59 @@ def extract_rules_based(text: str) -> dict:
 
         sl["lotti"].append(lotto_data)
 
+    # --- Vincoli partecipazione lotti ---
+    if sl["numero_lotti"] > 1:
+        sl["offerta_identica"] = bool(re.search(
+            r'(?:medesima|stessa)\s+offerta[^.]{0,40}identica|offerta\s+identica[^.]{0,40}(?:entrambi|tutti)',
+            text, re.IGNORECASE,
+        ))
+        sl["medesima_forma_giuridica"] = bool(re.search(
+            r'medesima\s+forma\s+giuridica', text, re.IGNORECASE,
+        ))
+
+    # --- Fallback globale per importi per-lotto mancanti ---
+    for lotto in sl["lotti"]:
+        if "importo_base_asta" not in lotto:
+            n = lotto["numero"]
+            # "per il Lotto N, l'importo contrattuale complessivo pari a € X"
+            m_ic = re.search(
+                rf"Lotto\s*(?:n\.?\s*)?{n}\b.{{0,200}}?"
+                rf"(?:importo\s+contrattuale\s+(?:complessivo\s+)?pari\s+a|Valore\s+appalto(?:\s+complessivo)?)"
+                rf"\s*€?\s*([\d.,]+)",
+                text, re.IGNORECASE | re.DOTALL,
+            )
+            if m_ic:
+                v = _parse_euro(m_ic.group(1))
+                if v and v > 100:
+                    lotto["importo_base_asta"] = v
+        # Denominazione fallback dalla menzione "Lotto N – Edificio/Descrizione"
+        if "denominazione" not in lotto:
+            n = lotto["numero"]
+            m_den = re.search(
+                rf"Lotto\s*(?:n\.?\s*)?{n}\s*[–\-\u2013]\s*(.{{10,200}}?)(?:\n|ID\s|CATEGORIA|\d{{1,2}}\.\d)",
+                text, re.IGNORECASE,
+            )
+            if m_den:
+                lotto["denominazione"] = _clean(m_den.group(1))
+
     # Se lotto unico e non abbiamo trovato importi lotto specifici, usa quelli globali
     if sl["numero_lotti"] == 1 and sl["lotti"]:
         lotto = sl["lotti"][0]
         if "importo_base_asta" not in lotto and ic.get("importo_totale_gara"):
             lotto["importo_base_asta"] = ic["importo_totale_gara"]
+        # Per lotto unico, usa anche gli importi di ribasso e denominazione se disponibili
+        if "importo_soggetto_ribasso" not in lotto and ic.get("importo_totale_soggetto_ribasso"):
+            lotto["importo_soggetto_ribasso"] = ic["importo_totale_soggetto_ribasso"]
+        if "denominazione" not in lotto and ig.get("titolo"):
+            lotto["denominazione"] = ig["titolo"]
+    elif sl["numero_lotti"] == 1 and not sl["lotti"]:
+        # Nessun lotto trovato esplicitamente, crea uno da dati globali
+        lotto = {"numero": 1}
+        if ic.get("importo_totale_gara"):
+            lotto["importo_base_asta"] = ic["importo_totale_gara"]
+        if ig.get("titolo"):
+            lotto["denominazione"] = ig["titolo"]
+        sl["lotti"].append(lotto)
 
     # --- Estrazione lotti da tabella multi-colonna (formato QTE) ---
     # Cerca sezione tabellare con righe aventi almeno 2 importi in €/Ç
@@ -936,8 +1173,16 @@ def extract_rules_based(text: str) -> dict:
         r"(?:entro\s+il\s+(?:giorno\s+)?)(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
         # "termine/scadenza...DD/MM/YYYY ore HH:MM"
         r"(?:scadenza|termine)[^.]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
+        # "presentazione offerte...DD/MM/YYYY ore HH:MM" (senza prefisso scadenza)
+        r"presentazione\s+(?:dell['\u2019]\s*)?offert\w+[^.]{0,150}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
         # Standard: "scadenza/termine presentazione offerte ...data"
         r"(?:scadenza|termine)\s+(?:per\s+la\s+)?(?:presentazione|ricezione)\s+(?:dell['\u2019]\s*)?offert\w+[^.]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        # "le offerte dovranno pervenire entro ... DD/MM/YYYY"
+        r"offert\w+\s+(?:dovranno|devono)\s+(?:essere\s+)?(?:presentat\w+|trasmess\w+|inviat\w+|pervenire)[^.]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+)?(\d{1,2}[:.]\d{2}))?",
+        # "ore HH:MM del DD mese YYYY" (formato data scritta italiana)
+        r"(?:entro\s+(?:e\s+non\s+oltre\s+)?(?:le\s+)?ore\s+)(\d{1,2}[:.,:]\d{2})\s+del\s+(\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})",
+        # Tabella/campo con solo data e ora vicino a "scadenza"  
+        r"(?:scadenza|termine)[^.]{0,60}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
     ]
     for sp in scad_patterns:
         m_scad = re.search(sp, text, re.IGNORECASE | re.DOTALL)
@@ -1004,7 +1249,17 @@ def extract_rules_based(text: str) -> dict:
         dur_c["anni"] = int(m_dur_anni.group(1))
 
     # Durata in giorni
-    m_dur_gen = re.search(r"durat\w+\s+(?:dell?['\u2019]\s*)?(?:contratto|appalto|servizio|incarico)[^.]{0,100}?(\d+)\s*(?:giorni|gg)", text, re.IGNORECASE)
+    m_dur_gen = re.search(
+        r"durat\w+\s+(?:complessiv\w+\s+)?(?:dell?['\u2019]\s*)?(?:contratto|appalto|servizio|incarico|lotto|procedura|prestazion\w+)"
+        r"[^.]{0,150}?(\d+)\s*(?:giorni|gg)\s+(?:naturali\s+e\s+consecutivi|natural\w+|lavora\w+|solari\w+)?",
+        text, re.IGNORECASE,
+    )
+    if not m_dur_gen:
+        # Fallback più ampio: "durata complessiva ... stimata in N giorni"
+        m_dur_gen = re.search(
+            r"durat\w+\s+complessiv\w+[^.]{0,200}?(?:stimat\w+\s+in|pari\s+a|di)\s*(\d+)\s*(?:giorni|gg)",
+            text, re.IGNORECASE,
+        )
     if m_dur_gen:
         dur_c["giorni"] = int(m_dur_gen.group(1))
         temp["durata_esecuzione_giorni"] = dur_c["giorni"]
@@ -1177,28 +1432,110 @@ def extract_rules_based(text: str) -> dict:
         (r"(?:professionista\s+antincendio)", None),
         (r"(?:tecnico\s+competente\s+in\s+acustica)", None),
         (r"(?:coordinatore\s+del\s+gruppo)", None),
+        (r"(?:coordinatore\s+della\s+progettazione)", None),
         (r"(?:BIM\s+manager|BIM\s+coordinator|BIM\s+specialist)", None),
         (r"(?:esperto\s+ambientale|esperto\s+CAM)", None),
         (r"(?:topografo)", None),
+        # "Tecnico esperto in/di ..." (generico, cattura ruoli specialistici)
+        (r"(?:tecnico\s+esperto\s+(?:in|di)\s+[^\n]{5,80}?)(?=\n|\s{2,}|Laurea)", None),
     ]
     figure = []
     for pat, _ in ruoli_patterns:
         matches = re.findall(pat, text, re.IGNORECASE)
-        if matches:
-            role = _clean(matches[0])
-            if role and role not in [f.get("ruolo", "").lower() for f in figure]:
-                entry = {"ruolo": role}
-                # Cerca requisiti specifici vicino alla menzione
-                idx_r = text_lower.find(role.lower())
-                if idx_r >= 0:
-                    ctx = text[idx_r:idx_r + 300]
-                    m_req_r = re.search(r"(?:abilitazione|iscrizione|iscritt\w+)\s+([^.]{10,100})", ctx, re.IGNORECASE)
-                    if m_req_r:
-                        entry["requisiti"] = _clean(m_req_r.group(0))
-                figure.append(entry)
+        for m in matches:
+            role = _clean(m)
+            if not role:
+                continue
+            # Dedup: controlla corrispondenza esatta, prefisso comune (primi 40 car) o sottostringhe
+            rl = role.lower()
+            is_dup = any(
+                rl == ex or rl[:40] == ex[:40] or rl.startswith(ex[:40]) or ex.startswith(rl[:40])
+                or rl in ex or ex in rl
+                for ex in (f.get("ruolo", "").lower() for f in figure)
+            )
+            if is_dup:
+                continue
+            entry = {"ruolo": role}
+            # Cerca requisiti specifici vicino alla menzione
+            idx_r = text_lower.find(role.lower())
+            if idx_r >= 0:
+                ctx = text[idx_r:idx_r + 300]
+                m_req_r = re.search(r"(?:abilitazione|iscrizione|iscritt\w+)\s+([^.]{10,100})", ctx, re.IGNORECASE)
+                if m_req_r:
+                    entry["requisiti"] = _clean(m_req_r.group(0))
+            entry["_pos"] = idx_r
+            figure.append(entry)
+
+    # Post-dedup: remove shorter roles that appear within the description of a longer role
+    if len(figure) > 1:
+        to_remove = set()
+        for i in range(len(figure)):
+            pi = figure[i].get("_pos", -1)
+            ri = figure[i].get("ruolo", "").lower()
+            if pi < 0:
+                continue
+            for j in range(len(figure)):
+                if i == j:
+                    continue
+                pj = figure[j].get("_pos", -1)
+                rj_len = len(figure[j].get("ruolo", ""))
+                if pj < 0:
+                    continue
+                # Use a window around the longer role's full description block
+                ctx_end = min(len(text_lower), pj + max(rj_len, 200) + 200)
+                if len(ri) < rj_len and pi >= pj and pi < ctx_end:
+                    if ri in text_lower[pj:ctx_end]:
+                        to_remove.add(i)
+                        break
+        figure = [f for idx, f in enumerate(figure) if idx not in to_remove]
+    for f in figure:
+        f.pop("_pos", None)
 
     if figure:
         gdl["figure_professionali"] = figure
+    else:
+        # Fallback: estrai figure da liste numerate/puntate nella sezione requisiti
+        # Pattern: "a) ... b) ..." or "1) ... 2) ..." or "- ... - ..."
+        fig_section = req_section or _section_text(
+            text,
+            ["GRUPPO DI LAVORO", "FIGURE PROFESSIONALI", "COMPOSIZIONE DEL GRUPPO", "STRUTTURA OPERATIVA",
+             "TEAM DI PROGETTAZIONE", "SOGGETTI RICHIESTI"],
+            ["AVVALIMENTO", "SUBAPPALTO", "GARANZI", "CRITERI", "9.", "10."],
+            max_len=10000,
+        )
+        if fig_section:
+            # Pattern per liste con ruoli professionali
+            fig_list_patterns = [
+                # "n. 1 <ruolo>" oppure "n° 1 <ruolo>"
+                r"n\.?\s*°?\s*(\d+)\s+((?:[A-Z][a-z]+\s+){1,5}[a-z]+(?:\s+[a-z]+){0,3})",
+                # "1) <Ruolo con descrizione>"  o "a) <ruolo>"
+                r"(?:^|\n)\s*(?:\d+|[a-h])\s*[.)]\s*([A-Z][^\n]{10,120}?)(?:\n|;)",
+                # "- <ruolo> (requisiti)" o "• <ruolo>"
+                r"(?:^|\n)\s*[-•–]\s*([A-Z][^\n]{10,120}?)(?:\n|;)",
+                # Tabella numerata: "1 ... Tecnico esperto ... 2 ... Tecnico ..."
+                r"(?:^|\n)\s*(\d)\s+(Tecnico\s+[^\n]{10,120}?)(?=\s+Laurea|\s+Diploma|\s+Abilit|\n\n)",
+            ]
+            for fig_pat in fig_list_patterns:
+                fig_matches = re.findall(fig_pat, fig_section, re.MULTILINE)
+                if fig_matches and len(fig_matches) >= 2:
+                    for fm in fig_matches:
+                        role_text = fm[-1] if isinstance(fm, tuple) else fm
+                        role_text = _clean(role_text)
+                        if role_text and len(role_text) > 5:
+                            # Filtra voci che non sono ruoli professionali
+                            role_lower = role_text.lower()
+                            if any(kw in role_lower for kw in [
+                                "progettist", "direttore", "coordinat", "ingegner",
+                                "architet", "geolog", "collaudat", "ispettor",
+                                "responsabil", "tecnico", "professionista", "esperto",
+                                "specialista", "consulente", "verificat", "topograf",
+                                "bim", "operativ", "lavori", "sicurezza", "struttur",
+                                "impianti", "edilizia", "manutenzione",
+                            ]):
+                                figure.append({"ruolo": role_text[:200]})
+                    if figure:
+                        gdl["figure_professionali"] = figure
+                        break
 
     # Cumulabilità ruoli (stessa persona può coprire più ruoli)
     cumul_patterns = [
@@ -1228,7 +1565,7 @@ def extract_rules_based(text: str) -> dict:
     crit_section = _section_text(
         text,
         ["CRITERIO DI AGGIUDICAZIONE", "CRITERI DI VALUTAZIONE", "18. CRITERIO", "5.1 Criteri"],
-        ["19.", "SVOLGIMENTO DELLE OPERAZIONI", "COMMISSIONE", "PROCEDURA DI GARA", "6.1 Commissione"],
+        ["SVOLGIMENTO DELLE OPERAZIONI DI GARA", "23.", "24.", "25.", "19."],
         max_len=20000,
     )
 
@@ -1296,12 +1633,134 @@ def extract_rules_based(text: str) -> dict:
     # Sub-criteri valutazione (pattern tabellare comune)
     # Pattern: codice (A, B, C, 1, 2... o A.1, B.2...) + descrizione + punti
     sub_criteri = re.findall(
-        r"(?:^|\n)\s*([A-D](?:\.\d{1,2})?|\d{1,2}(?:\.\d{1,2})?)\s*[.\-\)]\s*"
+        r"(?:^|\n)\s*([A-Z](?:\.\d{1,2})?|\d{1,2}(?:\.\d{1,2})?)\s*[.\-\)\s]\s*"
         r"(.{10,200}?)\s+"
-        r"(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:punti|pt|punto|\n|$)",
+        r"(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:punti|pt|punto|\s+\d|\n|$)",
         crit_section,
         re.IGNORECASE | re.MULTILINE,
     )
+
+    # Supplemento: righe compatte "CODE PUNTI" senza descrizione (es. "A.2 20")
+    compact_criteri = re.findall(
+        r"(?:^|\n)\s*([A-Z](?:\.\d{1,2})?)\s+(\d{1,3})\s*$",
+        crit_section,
+        re.MULTILINE,
+    )
+    existing_codes = {s[0] for s in sub_criteri}
+    for code, pts in compact_criteri:
+        if code not in existing_codes:
+            sub_criteri.append((code, code, pts))  # usa il codice come descrizione provvisoria
+
+    # Supplemento: criteri da TABELLA pdfplumber (colonne con |)
+    table_sections = re.findall(
+        r"\[TABELLA[^\]]*\]\n(.*?)(?=\n\n|\n---|\n\[TABELLA|\Z)", crit_section, re.DOTALL
+    )
+    existing_codes = {s[0] for s in sub_criteri}
+    for tab in table_sections:
+        for row in tab.split("\n"):
+            cells = [c.strip() for c in row.split("|")]
+            cells = [c for c in cells if c]
+            if not cells:
+                continue
+            codes = [c for c in cells if re.match(r"^[A-Z](?:\.\d{1,2})?$", c)]
+            numbers = [c for c in cells if re.match(r"^\d{1,3}$", c) and 1 <= int(c) <= 100]
+            descs = [c for c in cells if len(c) > 5 and not re.match(r"^[\d,.]+$", c)
+                     and not re.match(r"^[A-Z](?:\.\d)?$", c)]
+            for code in codes:
+                if code in existing_codes:
+                    continue
+                desc = descs[0] if descs else code
+                pts = numbers[0] if numbers else None
+                if pts:
+                    sub_criteri.append((code, desc, pts))
+                    existing_codes.add(code)
+
+    # Arricchimento descrizioni: cerca nomi criteri dalla tabella per codici con desc corte
+    _table_descs = {}
+    def _pick_desc_after_code(cells, code):
+        """Return the best desc cell that appears AFTER code in the row."""
+        try:
+            code_idx = cells.index(code)
+        except ValueError:
+            return None
+        # Look for desc cells after the code position
+        for c in cells[code_idx + 1:]:
+            if len(c) > 5 and not re.match(r"^[\d,.]+$", c) and not re.match(r"^[A-Z](?:\.\d{1,2})?$", c):
+                return c
+        # Fallback: any desc cell in the row
+        for c in cells:
+            if c != code and len(c) > 8 and not re.match(r"^[\d,.]+$", c) and not re.match(r"^[A-Z](?:\.\d{1,2})?$", c):
+                return c
+        return None
+
+    for tab in table_sections:
+        for row in tab.split("\n"):
+            cells = [c.strip() for c in row.split("|")]
+            cells = [c for c in cells if c]
+            codes = [c for c in cells if re.match(r"^[A-Z](?:\.\d{1,2})?$", c)]
+            for code in codes:
+                if code not in _table_descs:
+                    desc = _pick_desc_after_code(cells, code)
+                    if desc:
+                        _table_descs[code] = desc
+    # Anche parse pipe-delimited rows senza marker [TABELLA]
+    for row in crit_section.split("\n"):
+        if "|" not in row:
+            continue
+        cells = [c.strip().strip("*") for c in row.split("|")]
+        cells = [c.strip() for c in cells if c.strip()]
+        codes = [c for c in cells if re.match(r"^[A-Z](?:\.\d{1,2})?$", c)]
+        for code in codes:
+            if code not in _table_descs:
+                desc = _pick_desc_after_code(cells, code)
+                if desc:
+                    _table_descs[code] = desc
+    # Supplemento: nome da intestazione bold "**A.1 – Competenze..."
+    for m_bold in re.finditer(
+        r"\*\*\s*([A-Z](?:\.\d{1,2})?)\s*[\u2013\u2014\-–—]\s*(.{10,120}?)\s*\*\*",
+        crit_section,
+    ):
+        code_b = m_bold.group(1)
+        desc_b = m_bold.group(2).strip()
+        if code_b not in _table_descs:
+            _table_descs[code_b] = desc_b
+    # Nomi noti per criteri standard
+    _known_names = {
+        "A": "Qualità e adeguatezza del gruppo di lavoro proposto",
+        "B": "Promozione dell'inserimento di giovani professionisti",
+        "C": "Approccio metodologico, organizzativo e coordinamento tecnico",
+        "D": "Tecniche di rilievo e restituzione grafica",
+        "E": "Certificazioni",
+    }
+    # Aggiorna sub_criteri con descrizioni migliori
+    enriched = []
+    for codice, desc, punti_str in sub_criteri:
+        table_desc = _table_descs.get(codice, "")
+        is_sub = "." in codice
+        # Per sub-criteri: preferisci la descrizione da tabella (intestazione autorevole)
+        # Per criteri principali: preferisci la più lunga
+        if is_sub and table_desc and len(table_desc) >= 10:
+            better_desc = table_desc
+        elif table_desc and len(table_desc) > len(desc):
+            better_desc = table_desc
+        else:
+            better_desc = desc
+        # Se la descrizione è troppo corta, prova nel testo vicino al codice
+        if len(better_desc) < 10:
+            m_name = re.search(
+                rf"(?:^|\n)\s*{re.escape(codice)}\s+([A-Z][^\d\n]{{8,120}})",
+                crit_section, re.MULTILINE,
+            )
+            if m_name:
+                better_desc = m_name.group(1).strip()
+        # Per criteri principali: usa _known_names (nomi autorevoli e completi)
+        if codice in _known_names:
+            better_desc = _known_names[codice]
+        # Ultima risorsa: usa il codice stesso
+        if not better_desc or len(better_desc) < 3:
+            better_desc = codice
+        enriched.append((codice, better_desc, punti_str))
+    sub_criteri = enriched
     criteri_parsed = []
     for codice, desc, punti_str in sub_criteri:
         try:
@@ -1311,6 +1770,9 @@ def extract_rules_based(text: str) -> dict:
         if punti <= 0 or punti > 100:
             continue
         desc_clean = _clean(desc)
+        # Rimuovi caratteri private-use (U+F02D ecc.) che appaiono come bullet/dash nei PDF
+        if desc_clean:
+            desc_clean = re.sub(r'^[\uf02d\uf0b7\uf0a7\uf020-\uf0ff\s\-–—]+', '', desc_clean).strip()
         if desc_clean and len(desc_clean) > 5:
             is_sub = "." in codice
             criteri_parsed.append({
@@ -1384,7 +1846,20 @@ def extract_rules_based(text: str) -> dict:
     # Garanzia provvisoria
     gar_section = _section_text(text, ["GARANZIA PROVVISORIA", "10. GARANZI"], ["GARANZIA DEFINITIVA", "11.", "SOPRALLUOGO"], max_len=5000)
 
-    if "non dovuta" in gar_section.lower() or "non è dovuta" in gar_section.lower() or "non richiesta" in gar_section.lower():
+    _gar_check = gar_section.lower() if gar_section.strip() else text_lower
+    _gar_non_dovuta = (
+        "non dovuta" in _gar_check
+        or "non è dovuta" in _gar_check
+        or "non richiesta" in _gar_check
+        or "non è richiesta" in _gar_check
+    )
+    # Fallback: check full text for explicit negation about garanzia provvisoria
+    if not _gar_non_dovuta and not gar_section.strip():
+        _gar_non_dovuta = bool(re.search(
+            r"non\s+è\s+richiest\w+\s+la\s+garanzia\s+provvisoria",
+            text, re.IGNORECASE,
+        ))
+    if _gar_non_dovuta:
         gp["dovuta"] = False
     else:
         # Pattern per percentuale garanzia: "2% dell'importo", "pari al 2%", ecc.
@@ -1629,6 +2104,8 @@ def extract_rules_based(text: str) -> dict:
     if "natura intellettuale" in text_lower:
         sic["DUVRI"] = {"richiesto": False, "nota": "Servizio di natura intellettuale, nessun rischio interferenza"}
         result["informazioni_aggiuntive"]["natura_servizio"] = "natura intellettuale"
+    elif re.search(r"non\s+(?:sussiste|è\s+richiest\w+|è\s+necessari\w+|previsto)\b[^.]{0,60}duvri|duvri[^.]{0,60}non\s+(?:richiest\w+|necessari\w+|previst\w+|dovut\w+)", text, re.IGNORECASE):
+        sic["DUVRI"] = {"richiesto": False, "nota": "DUVRI non richiesto come da disciplinare"}
     elif "duvri" in text_lower:
         sic["DUVRI"] = {"richiesto": True}
 
