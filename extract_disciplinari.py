@@ -1836,10 +1836,14 @@ def extract_rules_based(text: str) -> dict:
     # Nomi noti per criteri standard
     _known_names = {
         "A": "Qualità e adeguatezza del gruppo di lavoro proposto",
+        "A.1": "Competenze dei tecnici obbligatori",
+        "A.2": "Integrazione e potenziamento del team",
         "B": "Promozione dell'inserimento di giovani professionisti",
         "C": "Approccio metodologico, organizzativo e coordinamento tecnico",
         "D": "Tecniche di rilievo e restituzione grafica",
         "E": "Certificazioni",
+        "E.1": "Certificazione ISO 9001 per il sistema di gestione della qualità",
+        "E.2": "Certificazione di parità di genere ai sensi dell'art. 46-bis del D.Lgs. 198/2006",
     }
     # Aggiorna sub_criteri con descrizioni migliori
     enriched = []
@@ -1898,6 +1902,130 @@ def extract_rules_based(text: str) -> dict:
         and '...' not in c['nome']
         and len(c['nome']) > 8
     ]
+
+    # ── Arricchimento criteri: descrizione dettagliata da sez. 20.1 ──
+    _known_codes = {c["codice"] for c in criteri_filtered}
+    _desc_rel = {}
+    # Usa l'ULTIMA occorrenza (la prima è spesso nel sommario/TOC)
+    _all_rel = list(re.finditer(r'20\.1\s+RELAZIONE\s+TECNIC', text, re.IGNORECASE))
+    m_start_rel = _all_rel[-1] if _all_rel else None
+    if m_start_rel:
+        _r0 = m_start_rel.end()
+        m_end_rel = re.search(r'\n\s*(?:20\.2|21\.)\s+\w', text[_r0:], re.IGNORECASE)
+        _r1 = _r0 + (m_end_rel.start() if m_end_rel else 5000)
+        rel_body = text[_r0:_r1]
+        # Header criteri: "A. Nome..." o "A.1 – Nome..."
+        _hdr_patt = re.compile(
+            r'(?:^|\n)\s*([A-Z](?:\.\d{1,2})?)\s*[.–\-—\)]+\s+([A-Z\u00C0-\u017F][^\n]{5,})',
+        )
+        _hdrs = list(_hdr_patt.finditer(rel_body))
+        for idx_h, hdr in enumerate(_hdrs):
+            code_h = hdr.group(1)
+            if code_h not in _known_codes:
+                continue
+            hdr_name = hdr.group(2).strip()
+            h_end = _hdrs[idx_h + 1].start() if idx_h + 1 < len(_hdrs) else len(rel_body)
+            chunk = rel_body[hdr.end():h_end].strip()
+            # Per sub-criteri, includi il testo dell'intestazione nella descrizione
+            if '.' in code_h and hdr_name:
+                chunk = hdr_name + "\n" + chunk
+            # Rimuovi marker pagina
+            chunk = re.sub(r'---\s*Pagina\s+\d+\s*---', '', chunk)
+            # Rimuovi numeri di pagina isolati (es. "31", "32" su riga a sé)
+            chunk = re.sub(r'\n\s*\d{1,3}\s*(?=\n)', '', chunk)
+            chunk = re.sub(r'\n\d{1,3}\s*$', '', chunk.rstrip())
+            # Rimuovi numeri di pagina inline (es. "domotica, ecc.). 31 3.")
+            chunk = re.sub(r'\s+\d{1,3}\s+(?=\d\.\s)', ' ', chunk)
+            if chunk:
+                _desc_rel[code_h] = _clean(chunk)[:2000]
+
+    # ── Arricchimento criteri: punteggi D/T dalla TABELLA ──
+    _dt_map = {}  # code -> {'d': ..., 't': ...}
+    _score_line_re = re.compile(
+        r'\|\s*(\d*)\s*\|\s*\|\s*\|\s*(\d*)\s*\|\s*\|\s*\|\s*(\d*)\s*\|\s*\|?\s*$'
+    )
+    for tab in table_sections:
+        _seen = []
+        for line in tab.split("\n"):
+            if "|" not in line:
+                continue
+            cells = [c.strip() for c in line.split("|")]
+            # Trova codici criterio solo nelle celle (non nel testo libero)
+            for cell in cells:
+                if cell in _known_codes and cell not in _seen:
+                    _seen.append(cell)
+            # Cerca riga punteggi
+            ms = _score_line_re.search(line)
+            if ms:
+                total = int(ms.group(1)) if ms.group(1) else None
+                d_val = int(ms.group(2)) if ms.group(2) else None
+                t_val = int(ms.group(3)) if ms.group(3) else None
+                mains = [c for c in _seen if '.' not in c]
+                subs = [c for c in _seen if '.' in c]
+                if subs:
+                    sc = subs[-1]
+                    _dt_map[sc] = {'d': d_val, 't': t_val}
+                if mains and not subs:
+                    _dt_map[mains[-1]] = {'d': d_val, 't': t_val}
+                _seen = []
+
+    # Fallback: cerca D/T nel testo non-tabella (per criteri mancanti come C)
+    # Pattern: "CODICE .... PUNTI N ... D N ... T N" nei criteri section
+    for c in criteri_filtered:
+        code = c["codice"]
+        if code not in _dt_map and '.' not in code:
+            # Cerca nel testo: "C     organizzativo... 12  12" (PUNTI, D inline)
+            m_inline = re.search(
+                rf'(?:^|\n)\s*{re.escape(code)}\s+[^\d\n]{{5,120}}\s+'
+                rf'(\d{{1,3}})\s+(\d{{1,3}})\s*(?:\n|$)',
+                crit_section, re.MULTILINE,
+            )
+            if m_inline:
+                pts = int(m_inline.group(1))
+                d_or_t = int(m_inline.group(2))
+                if d_or_t == pts:
+                    _dt_map[code] = {'d': d_or_t, 't': None}
+                else:
+                    _dt_map[code] = {'d': d_or_t, 't': pts - d_or_t if pts > d_or_t else None}
+
+    # Applica arricchimento ai criteri
+    for c in criteri_filtered:
+        code = c["codice"]
+        # Descrizione dettagliata da 20.1
+        if code in _desc_rel:
+            c["descrizione_dettagliata"] = _desc_rel[code]
+        # D/T e tipo
+        dt = _dt_map.get(code, {})
+        if '.' not in code:
+            # Per criterio principale: aggrega D/T dei sub-criteri
+            sum_d = sum(
+                _dt_map.get(s["codice"], {}).get("d") or 0
+                for s in criteri_filtered if s["codice"].startswith(code + ".")
+            )
+            sum_t = sum(
+                _dt_map.get(s["codice"], {}).get("t") or 0
+                for s in criteri_filtered if s["codice"].startswith(code + ".")
+            )
+            has_subs = any(s["codice"].startswith(code + ".") for s in criteri_filtered)
+            if has_subs:
+                if sum_d: c["punteggio_discrezionale"] = float(sum_d)
+                if sum_t: c["punteggio_tabellare"] = float(sum_t)
+            else:
+                if dt.get("d"): c["punteggio_discrezionale"] = float(dt["d"])
+                if dt.get("t"): c["punteggio_tabellare"] = float(dt["t"])
+        else:
+            if dt.get("d"): c["punteggio_discrezionale"] = float(dt["d"])
+            if dt.get("t"): c["punteggio_tabellare"] = float(dt["t"])
+        # Tipo
+        has_d = c.get("punteggio_discrezionale") is not None
+        has_t = c.get("punteggio_tabellare") is not None
+        if has_d and has_t:
+            c["tipo"] = "misto"
+        elif has_d:
+            c["tipo"] = "discrezionale"
+        elif has_t:
+            c["tipo"] = "tabellare"
+
     if criteri_filtered:
         ot["criteri"] = criteri_filtered
 
@@ -1932,17 +2060,114 @@ def extract_rules_based(text: str) -> dict:
     # ======================================================================
 
     otf = result["offerta_tecnica_formato"]
-    m_pag = re.search(r"(?:max|massimo|fino a)\s*(\d+)\s*pagin\w+", text, re.IGNORECASE)
+    # Pagine massime: "n. 20 (venti) pagine (facciate)" oppure "max 20 pagine"
+    m_pag = re.search(
+        r"(?:max|massimo|fino\s+a|superare\s+(?:complessivamente\s+)?n\.)\s*(\d+)\s*(?:\([^)]*\)\s*)?pagin\w*",
+        text, re.IGNORECASE,
+    )
     if m_pag:
         otf["pagine_massime"] = int(m_pag.group(1))
+    # Formato (A4/A3)
+    m_fmt = re.search(r"formato\s+(A[34])", text, re.IGNORECASE)
+    if m_fmt:
+        otf["formato_pagina"] = m_fmt.group(1).upper()
+    # Facciate
+    m_fac = re.search(r"(\d+)\s*(?:\([^)]*\)\s*)?(?:pagine\s*)?(?:\(?\s*facciate\s*\)?)", text, re.IGNORECASE)
+    if m_fac and not otf.get("pagine_massime"):
+        otf["pagine_massime"] = int(m_fac.group(1))
+    # Esclusi dal conteggio
+    m_escl = re.search(
+        r"(?:non\s+rientrano|esclusi|eccetto)[^.]{0,30}conteggio[^.]{0,200}",
+        text, re.IGNORECASE,
+    )
+    if m_escl:
+        otf["esclusi_conteggio"] = _clean(m_escl.group(0))[:200]
 
     m_char = re.search(r"(?:Times\s+New\s+Roman|Arial|Calibri|Garamond)\s*(\d+)", text, re.IGNORECASE)
     if m_char:
         otf["carattere"] = _clean(m_char.group(0))
 
-    m_inter = re.search(r"interlinea\s*[:\s]*([\d.,]+)", text, re.IGNORECASE)
+    m_inter = re.search(r"interlinea\s*[:\s]*([\d]+[.,][\d]+)", text, re.IGNORECASE)
     if m_inter:
         otf["interlinea"] = m_inter.group(1)
+
+    # ======================================================================
+    # H-bis) CONTENUTO BUSTA TECNICA E NOTE IMPORTANTI
+    # ======================================================================
+
+    # --- Contenuto busta tecnica ---
+    busta_contenuto = []
+    busta_section = _section_text(
+        text,
+        ["BUSTA TECNICA", "CONTENUTO DELLA BUSTA TECNICA",
+         r"20\.\s+OFFERTA TECNICA", r"20\.\s+CONTENUTO"],
+        ["20.1 RELAZIONE", "21.", "BUSTA ECONOMICA"],
+        max_len=5000,
+    )
+    if busta_section:
+        # Cerca elenco "a) ...; b) ...; c) ...; d) ..."
+        busta_items = re.findall(
+            r"(?:^|\n)\s*([a-z])\)\s*(.+?)(?=\n\s*[a-z]\)\s|\n\s*(?:N\.B\.|L.\s*Offerta|La\s+|Il\s+|Si\s+)|$)",
+            busta_section, re.DOTALL,
+        )
+        for _, item_text in busta_items:
+            cleaned = _clean(item_text.replace("\n", " "))[:300]
+            if cleaned and len(cleaned) > 5:
+                busta_contenuto.append(cleaned)
+    # Fallback: cerca nel testo completo intorno a "Busta tecnica"
+    if not busta_contenuto:
+        m_busta = re.search(
+            r"[Bb]usta\s+[Tt]ecnica.*?(?:deve\s+contenere|conterr.)[^:]*:\s*(.*?)(?=\n\s*(?:N\.B\.|L.\s*Offerta|La\s+Relazione|20\.\d))",
+            text, re.DOTALL,
+        )
+        if m_busta:
+            items_block = m_busta.group(1)
+            for m_item in re.finditer(r"([a-z])\)\s*(.+?)(?=\s*[a-z]\)\s|$)", items_block, re.DOTALL):
+                cleaned = _clean(m_item.group(2).replace("\n", " "))[:300]
+                if cleaned and len(cleaned) > 5:
+                    busta_contenuto.append(cleaned)
+    otf["contenuto_busta_tecnica"] = busta_contenuto
+
+    # --- Note importanti offerta tecnica ---
+    note_ot = []
+    ot_section = _section_text(
+        text,
+        [r"20\.\s+OFFERTA TECNICA", r"20\.\s+CONTENUTO DELL", "BUSTA TECNICA"],
+        [r"21\.", "BUSTA ECONOMICA", r"21\.\s+OFFERTA ECONOMICA"],
+        max_len=10000,
+    )
+    search_text = ot_section if ot_section.strip() else text
+    # Offerta identica per entrambi i lotti
+    m_identica = re.search(
+        r"(?:offerta\s+tecnica\s+deve\s+essere\s+identica\s+per\s+entrambi\s+i\s+lotti|"
+        r"identica\s+per\s+entrambi\s+i\s+lotti)[^.]*\.\s*(?:In\s+caso\s+di\s+difformit.[^.]*\.)?",
+        search_text, re.IGNORECASE | re.DOTALL,
+    )
+    if m_identica:
+        note_ot.append(_clean(m_identica.group(0).replace("\n", " "))[:400])
+    # Caratteristiche minime / principio di equivalenza
+    _apo = "[\u2018\u2019']"  # apostrofo (dritto e curvo)
+    m_equiv = re.search(
+        r"L.Offerta\s+Tecnica\s+deve\s+rispettare\s+le\s+caratteristiche\s+minime[^.]*\.",
+        search_text, re.DOTALL,
+    )
+    if m_equiv:
+        note_ot.append(_clean(m_equiv.group(0).replace("\n", " "))[:400])
+    # No indicazioni economiche (a pena di esclusione)
+    m_noeco = re.search(
+        r"L.Offerta\s+Tecnica[^.]*?a\s+pena\s+di\s+esclusione[^.]*?economic\w+[^.]*\.",
+        search_text, re.IGNORECASE | re.DOTALL,
+    )
+    if m_noeco:
+        note_ot.append(_clean(m_noeco.group(0).replace("\n", " "))[:400])
+    # Commissione giudicatrice chiarimenti
+    m_comm = re.search(
+        r"[Ll]a\s+Commissione\s+giudicatrice[^.]*?chiarimenti[^.]*\.",
+        search_text, re.IGNORECASE | re.DOTALL,
+    )
+    if m_comm:
+        note_ot.append(_clean(m_comm.group(0).replace("\n", " "))[:400])
+    otf["note_importanti"] = note_ot
 
     # ======================================================================
     # I) GARANZIE

@@ -976,6 +976,20 @@ function showResults(data, filename) {
         const otGrid = document.createElement('div'); otGrid.className = 'result-grid';
         if (ot.punteggio_massimo != null) otGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">⭐</span>Punteggio Massimo</div></div><div class="result-value" style="font-size:1.1rem;font-weight:600;color:var(--accent)">${ot.punteggio_massimo}</div></div>`;
         if (ot.formato_relazione) otGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📄</span>Formato Relazione</div></div><div class="result-value">${escapeHtml(ot.formato_relazione)}</div></div>`;
+        // Contenuto busta tecnica
+        if (ot.contenuto_busta_tecnica && ot.contenuto_busta_tecnica.length > 0) {
+          let bustaHtml = '<ol style="margin:0;padding-left:18px;line-height:1.6">';
+          ot.contenuto_busta_tecnica.forEach(item => { bustaHtml += `<li style="margin-bottom:4px">${escapeHtml(item)}</li>`; });
+          bustaHtml += '</ol>';
+          otGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📦</span>Contenuto Busta Tecnica</div></div><div class="result-value" style="font-size:0.82rem">${bustaHtml}</div></div>`;
+        }
+        // Note importanti
+        if (ot.note_importanti && ot.note_importanti.length > 0) {
+          let noteHtml = '<ul style="margin:0;padding-left:18px;line-height:1.6">';
+          ot.note_importanti.forEach(n => { noteHtml += `<li style="margin-bottom:6px;color:var(--ink)">${escapeHtml(n)}</li>`; });
+          noteHtml += '</ul>';
+          otGrid.innerHTML += `<div class="result-card full-width" style="border-left:3px solid #e6a817"><div class="card-top"><div class="result-label"><span class="icon">⚠️</span>Note Importanti</div></div><div class="result-value" style="font-size:0.82rem">${noteHtml}</div></div>`;
+        }
         if (otGrid.innerHTML) sec.appendChild(otGrid);
 
         // Tabella criteri con sub-criteri
@@ -984,9 +998,17 @@ function showResults(data, filename) {
           let h = `<div class="result-card full-width"><table class="criteri-table"><thead><tr><th>Codice</th><th>Criterio</th><th>Punti</th><th>Disc.</th><th>Tab.</th><th>Tipo</th></tr></thead><tbody>`;
           criteri.forEach(c => {
             h += `<tr style="background:#fafaf8"><td style="font-family:var(--font-m);font-weight:600">${escapeHtml(c.codice||'—')}</td><td style="font-weight:500">${escapeHtml(c.nome||'—')}</td><td class="criteri-pts">${c.punteggio!=null?c.punteggio:'—'}</td><td style="font-family:var(--font-m)">${c.punteggio_discrezionale!=null?c.punteggio_discrezionale:'—'}</td><td style="font-family:var(--font-m)">${c.punteggio_tabellare!=null?c.punteggio_tabellare:'—'}</td><td><span class="tag cat">${escapeHtml(c.tipo||'—')}</span></td></tr>`;
+            // Dettaglio criterio principale
+            if (c.descrizione_dettagliata) {
+              h += `<tr><td></td><td colspan="5" style="font-size:0.75rem;color:var(--ink-soft);padding:4px 12px 8px 20px;line-height:1.5;white-space:pre-line;border-bottom:1px solid var(--border)">${escapeHtml(c.descrizione_dettagliata)}</td></tr>`;
+            }
             // Sub-criteri
             (c.sub_criteri || []).forEach(sc => {
-              h += `<tr><td style="font-family:var(--font-m);padding-left:20px;color:var(--ink-soft)">${escapeHtml(sc.codice||'')}</td><td style="font-size:0.78rem;color:var(--ink-soft);padding-left:20px">${escapeHtml(sc.descrizione||'—')}</td><td style="font-family:var(--font-m);color:var(--accent)">${sc.punteggio!=null?sc.punteggio:'—'}</td><td></td><td></td><td style="font-size:0.72rem">${escapeHtml(sc.tipo||'')}</td></tr>`;
+              h += `<tr><td style="font-family:var(--font-m);padding-left:20px;color:var(--ink-soft)">${escapeHtml(sc.codice||'')}</td><td style="font-size:0.78rem;color:var(--ink-soft);padding-left:20px">${escapeHtml(sc.descrizione||'—')}</td><td style="font-family:var(--font-m);color:var(--accent)">${sc.punteggio!=null?sc.punteggio:'—'}</td><td style="font-family:var(--font-m);color:var(--ink-soft)">${sc.punteggio_discrezionale!=null?sc.punteggio_discrezionale:'—'}</td><td style="font-family:var(--font-m);color:var(--ink-soft)">${sc.punteggio_tabellare!=null?sc.punteggio_tabellare:'—'}</td><td style="font-size:0.72rem">${escapeHtml(sc.tipo||'')}</td></tr>`;
+              // Dettaglio sub-criterio
+              if (sc.descrizione_dettagliata) {
+                h += `<tr><td></td><td colspan="5" style="font-size:0.72rem;color:var(--ink-soft);padding:2px 12px 8px 28px;line-height:1.45;white-space:pre-line;border-bottom:1px solid var(--border)">${escapeHtml(sc.descrizione_dettagliata)}</td></tr>`;
+              }
             });
           });
           h += '</tbody></table></div>';

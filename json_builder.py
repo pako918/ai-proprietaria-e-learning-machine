@@ -350,31 +350,42 @@ def build_output(nested: dict) -> dict:
                     sub_list.append(SubCriterio(
                         codice=sc_cod,
                         punteggio=_parse_float(sc.get("punteggio")),
+                        punteggio_discrezionale=_parse_float(sc.get("punteggio_discrezionale")),
+                        punteggio_tabellare=_parse_float(sc.get("punteggio_tabellare")),
                         tipo=sc.get("tipo"),
                         descrizione=sc.get("nome") or sc.get("descrizione"),
+                        descrizione_dettagliata=sc.get("descrizione_dettagliata"),
                     ))
             criteri_out.append(CriterioValutazione(
                 codice=codice,
                 nome=c.get("nome") or c.get("descrizione"),
                 punteggio=_parse_float(c.get("punteggio")),
+                punteggio_discrezionale=_parse_float(c.get("punteggio_discrezionale")),
+                punteggio_tabellare=_parse_float(c.get("punteggio_tabellare")),
                 tipo=c.get("tipo"),
                 descrizione=c.get("descrizione"),
+                descrizione_dettagliata=c.get("descrizione_dettagliata"),
                 sub_criteri=sub_list,
             ))
 
         # Formato relazione
         formato_parts = []
         if otf.get("pagine_massime"):
-            formato_parts.append(f"Max {otf['pagine_massime']} pagine A4")
+            fmt_pg = otf.get("formato_pagina", "A4")
+            formato_parts.append(f"Max {otf['pagine_massime']} pagine ({fmt_pg})")
         if otf.get("carattere"):
             formato_parts.append(otf["carattere"])
         if otf.get("interlinea"):
             formato_parts.append(f"interlinea {otf['interlinea']}")
+        if otf.get("esclusi_conteggio"):
+            formato_parts.append(f"Esclusi: {otf['esclusi_conteggio']}")
         formato_rel = ", ".join(formato_parts) if formato_parts else None
 
         ot_obj = OffertaTecnica(
             punteggio_massimo=_parse_float(ot_raw.get("punteggio_massimo")),
             formato_relazione=formato_rel,
+            contenuto_busta_tecnica=otf.get("contenuto_busta_tecnica", []),
+            note_importanti=otf.get("note_importanti", []),
             criteri=criteri_out,
         )
 

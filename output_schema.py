@@ -105,8 +105,11 @@ class SubCriterio(BaseModel):
     """Sub-criterio di valutazione."""
     codice: Optional[str] = None
     punteggio: Optional[float] = None
+    punteggio_discrezionale: Optional[float] = None
+    punteggio_tabellare: Optional[float] = None
     tipo: Optional[str] = None
     descrizione: Optional[str] = None
+    descrizione_dettagliata: Optional[str] = None
 
 
 class CriterioValutazione(BaseModel):
@@ -118,6 +121,7 @@ class CriterioValutazione(BaseModel):
     punteggio_tabellare: Optional[float] = None
     tipo: Optional[str] = None
     descrizione: Optional[str] = None
+    descrizione_dettagliata: Optional[str] = None
     sub_criteri: List[SubCriterio] = Field(default_factory=list)
 
 
@@ -125,6 +129,8 @@ class OffertaTecnica(BaseModel):
     """Struttura offerta tecnica con criteri."""
     punteggio_massimo: Optional[float] = None
     formato_relazione: Optional[str] = None
+    contenuto_busta_tecnica: List[str] = Field(default_factory=list)
+    note_importanti: List[str] = Field(default_factory=list)
     criteri: List[CriterioValutazione] = Field(default_factory=list)
 
 
