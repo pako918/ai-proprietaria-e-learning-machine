@@ -61,14 +61,29 @@ def extract_text_from_pdf(pdf_path: str, max_pages: int | None = None) -> str:
             if page_text.strip():
                 text_parts.append(f"--- Pagina {i+1} ---\n{page_text}")
 
-            # Prova anche ad estrarre tabelle
-            tables = page.extract_tables()
-            for table in tables:
-                if table:
-                    table_str = "\n".join(
-                        " | ".join(str(cell or "") for cell in row)
-                        for row in table
-                    )
+            # Estrai tabelle: prova prima con strategy "lines" (bordi grafici),
+            # poi fallback a default. "lines" ricostruisce correttamente le celle
+            # multilinea usando i rettangoli/linee del PDF.
+            tables_found = []
+            for strat in [{"vertical_strategy": "lines", "horizontal_strategy": "lines"}, {}]:
+                try:
+                    tables = page.extract_tables(strat) if strat else page.extract_tables()
+                except Exception:
+                    continue
+                if tables:
+                    tables_found = tables
+                    break
+            for table in tables_found:
+                if not table:
+                    continue
+                # Filtra righe vuote
+                rows = []
+                for row in table:
+                    clean = [str(cell or "").strip().replace("\n", " ") for cell in row]
+                    if any(c for c in clean):
+                        rows.append(clean)
+                if rows:
+                    table_str = "\n".join(" | ".join(cell for cell in row) for row in rows)
                     if "(cid:" in table_str:
                         table_str = _decode_cid(table_str)
                     text_parts.append(f"[TABELLA pag.{i+1}]\n{table_str}")
@@ -1529,51 +1544,214 @@ def extract_rules_based(text: str) -> dict:
 
     # Gruppo di lavoro - figure professionali
     gdl = rp["gruppo_di_lavoro"]
-    ruoli_patterns = [
-        (r"(?:progettist\w+\s+(?:struttur\w+|architetton\w+|impiantist\w+))", None),
-        (r"(?:direttore\s+(?:dei\s+)?lavori)", None),
-        (r"(?:coordinatore\s+(?:per\s+la\s+)?sicurezza\s+in\s+fase\s+di\s+(?:progettazione|esecuzione))", None),
-        (r"(?:geologo)", None),
-        (r"(?:collaudator\w+\s+(?:struttur\w+|static\w+|tecnico\s+amministrativ\w+)?)", None),
-        (r"(?:direttore\s+operativo)", None),
-        (r"(?:ispettore\s+di\s+cantiere)", None),
-        (r"(?:responsabile\s+(?:della\s+)?integrazione)", None),
-        (r"(?:professionista\s+antincendio)", None),
-        (r"(?:tecnico\s+competente\s+in\s+acustica)", None),
-        (r"(?:coordinatore\s+del\s+gruppo)", None),
-        (r"(?:coordinatore\s+della\s+progettazione)", None),
-        (r"(?:BIM\s+manager|BIM\s+coordinator|BIM\s+specialist)", None),
-        (r"(?:esperto\s+ambientale|esperto\s+CAM)", None),
-        (r"(?:topografo)", None),
-        # "Tecnico esperto in/di ..." (generico, cattura ruoli specialistici)
-        (r"(?:tecnico\s+esperto\s+(?:in|di)\s+[^\n]{5,80}?)(?=\n|\s{2,}|Laurea)", None),
-    ]
+
+    # ── Prima strategia: estrai da tabella pipe-delimited (GRUPPO DI LAVORO) ──
+    # Le tabelle PDF vengono inserite nel testo come righe "col1 | col2 | col3".
+    # La tabella del gruppo di lavoro ha colonne: N° | Prestazione/Figura | Requisiti
     figure = []
-    for pat, _ in ruoli_patterns:
-        matches = re.findall(pat, text, re.IGNORECASE)
-        for m in matches:
-            role = _clean(m)
-            if not role:
+    gdl_table_section = _section_text(
+        text,
+        ["GRUPPO DI LAVORO", "STRUTTURA OPERATIVA MINIMA", "COMPOSIZIONE DEL GRUPPO",
+         "FIGURE PROFESSIONALI RICHIESTE", "Prestazione/Figura professionale"],
+        ["AVVALIMENTO", "SUBAPPALTO", "GARANZI", "CRITERI", "CAPACIT", "FATTURATO",
+         "Il Gruppo di lavoro dovrà", "Il gruppo di lavoro dovrà",
+         "9.", "10.", "11.", "SERVIZI DI PUNTA", "SERVIZI ANALOGHI"],
+        max_len=10000,
+    )
+    if gdl_table_section:
+        # Parse righe pipe-delimited: "N | Ruolo multilinea | Requisiti multilinea"
+        # Le celle multilinea del PDF producono righe di continuazione senza numero iniziale.
+        table_rows = []
+        current_row_cells = None
+        for line in gdl_table_section.split("\n"):
+            stripped = line.strip()
+            if not stripped or "|" not in stripped:
                 continue
-            # Dedup: controlla corrispondenza esatta, prefisso comune (primi 40 car) o sottostringhe
-            rl = role.lower()
-            is_dup = any(
-                rl == ex or rl[:40] == ex[:40] or rl.startswith(ex[:40]) or ex.startswith(rl[:40])
-                or rl in ex or ex in rl
-                for ex in (f.get("ruolo", "").lower() for f in figure)
+            # Split sui pipe, rimuovendo quelli iniziali/finali
+            raw_cells = stripped.split("|")
+            cells = [c.strip() for c in raw_cells]
+            # Rimuovi celle vuote in testa/coda create da pipe iniziali/finali
+            while cells and cells[0] == "":
+                cells.pop(0)
+            while cells and cells[-1] == "":
+                cells.pop()
+            if not cells:
+                continue
+            # Controlla se la prima cella è un numero (nuova riga della tabella)
+            first = cells[0]
+            if re.match(r"^\d+$", first):
+                if current_row_cells is not None:
+                    table_rows.append(current_row_cells)
+                current_row_cells = cells
+            elif current_row_cells is not None:
+                # Continuazione della riga precedente (celle multilinea)
+                # Le celle di continuazione non hanno il numero, quindi le allineiamo
+                # partendo dalla colonna 1 (ruolo) in poi
+                for ci in range(len(cells)):
+                    target = ci + 1  # offset di 1 perché manca la colonna numero
+                    if target < len(current_row_cells) and cells[ci]:
+                        if current_row_cells[target]:
+                            current_row_cells[target] += " " + cells[ci]
+                        else:
+                            current_row_cells[target] = cells[ci]
+        if current_row_cells is not None:
+            table_rows.append(current_row_cells)
+
+        for row in table_rows:
+            # row[0] = N, row[1] = Prestazione/Figura, row[2+] = Requisiti
+            ruolo_raw = row[1] if len(row) > 1 else ""
+            requisiti_raw = row[2] if len(row) > 2 else ""
+            # Unisci eventuali colonne extra nei requisiti
+            if len(row) > 3:
+                requisiti_raw += " " + " ".join(row[3:])
+            ruolo_clean = _clean(ruolo_raw)
+            req_clean = _clean(requisiti_raw)
+            if ruolo_clean and len(ruolo_clean) > 5:
+                entry = {"ruolo": ruolo_clean}
+                if req_clean and len(req_clean) > 3:
+                    entry["requisiti"] = req_clean
+                figure.append(entry)
+
+    # ── Strategia 1b: tabella plain-text interleaved (pdfplumber senza bordi) ──
+    # Quando pdfplumber non rileva i bordi della tabella, legge left-to-right
+    # mescolando il testo delle due colonne (Ruolo | Requisiti) sulla stessa riga.
+    # Approccio: separiamo ogni riga in "role fragments" e "req fragments"
+    # usando keyword che marcano l'inizio del testo requisiti (Laurea, iscrizione...).
+    if not figure and gdl_table_section:
+        has_table_header = bool(re.search(
+            r"(?:Prestazione|Figura\s+professionale|Ruolo).*?(?:Requisit|Titol)",
+            gdl_table_section, re.IGNORECASE | re.DOTALL
+        ))
+        has_roles = bool(re.search(
+            r"Tecnico\s+esperto|Progettist\w+\s+(?:architetton|struttur|impiantist)",
+            gdl_table_section, re.IGNORECASE
+        ))
+        if has_table_header or has_roles:
+            # Trova l'header della tabella per prendere solo il body
+            hdr_m = re.search(
+                r"(?:Prestazione.*?Requisit\w*|Figura\s+professionale.*?Requisit\w*)",
+                gdl_table_section, re.IGNORECASE | re.DOTALL,
             )
-            if is_dup:
-                continue
-            entry = {"ruolo": role}
-            # Cerca requisiti specifici vicino alla menzione
-            idx_r = text_lower.find(role.lower())
-            if idx_r >= 0:
-                ctx = text[idx_r:idx_r + 300]
-                m_req_r = re.search(r"(?:abilitazione|iscrizione|iscritt\w+)\s+([^.]{10,100})", ctx, re.IGNORECASE)
-                if m_req_r:
-                    entry["requisiti"] = _clean(m_req_r.group(0))
-            entry["_pos"] = idx_r
-            figure.append(entry)
+            body = gdl_table_section[hdr_m.end():] if hdr_m else gdl_table_section
+
+            # Regex per splittare una riga al confine ruolo/requisiti
+            _req_split = re.compile(
+                r"((?:Laurea\s+(?:magistrale|triennale)|Diploma\s|Abilitazione\s|"
+                r"iscrizione\s+al\s+rispettivo)\b)",
+                re.IGNORECASE,
+            )
+            # Keyword che aprono un nuovo ruolo (specifiche per evitare falsi positivi
+            # su continuazioni come "coordinatore della progettazione")
+            _role_start = re.compile(
+                r"^(?:Tecnico\s+esperto\s+(?:in|di)\b|"
+                r"Progettist\w+\s+(?:architetton|struttur|impiantist|coordinat)|"
+                r"Coordinatore\s+(?:per\s+la|della\s+)sicurezza|"
+                r"Direttore\s+(?:dei\s+lavori|operativo|tecnico)|"
+                r"Geologo\b|Collaudator\w+\s|"
+                r"Ispettor\w+\s+di\s+cantiere|"
+                r"Professionista\s+antincendio|"
+                r"Esperto\s+(?:ambientale|CAM)|"
+                r"BIM\s+(?:manager|coordinator|specialist)|Topografo\b)",
+                re.IGNORECASE,
+            )
+
+            role_frags: list[str] = []
+            req_frags: list[str] = []
+            entries: list[dict] = []
+
+            for line in body.split("\n"):
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                # Rimuovi marker di pagina
+                stripped = re.sub(r"---\s*Pagina\s+\d+\s*---", "", stripped).strip()
+                stripped = re.sub(r"\[Pagina\s+\d+\]", "", stripped).strip()
+                if not stripped:
+                    continue
+                # Numero standalone → skip (entry marker)
+                if re.match(r"^\d{1,2}$", stripped):
+                    continue
+                # Rimuovi numero iniziale (es. "1 esistenti..." → "esistenti...")
+                stripped = re.sub(r"^(\d{1,2})\s+", "", stripped)
+                # Controlla se inizia un nuovo ruolo
+                if _role_start.match(stripped) and (role_frags or req_frags):
+                    entries.append({"rf": list(role_frags), "qf": list(req_frags)})
+                    role_frags.clear()
+                    req_frags.clear()
+                # Splitta la riga al confine ruolo/requisiti
+                parts = _req_split.split(stripped)
+                if len(parts) > 1:
+                    left = parts[0].strip()
+                    right = "".join(parts[1:]).strip()
+                    if left:
+                        role_frags.append(left)
+                    if right:
+                        req_frags.append(right)
+                else:
+                    # Riga intera: è ruolo o requisiti?
+                    if stripped.lower().startswith(("iscrizione", "laurea", "diploma", "abilitazione")):
+                        req_frags.append(stripped)
+                    else:
+                        role_frags.append(stripped)
+
+            if role_frags or req_frags:
+                entries.append({"rf": list(role_frags), "qf": list(req_frags)})
+
+            for idx_e, e in enumerate(entries, 1):
+                role = _clean(" ".join(e["rf"]))
+                req = _clean(" ".join(e["qf"]))
+                if role and len(role) > 5:
+                    entry = {"ruolo": role, "numero": idx_e}
+                    if req and len(req) > 3:
+                        entry["requisiti"] = req
+                    figure.append(entry)
+
+    # ── Seconda strategia (fallback): regex su testo libero ──
+    if not figure:
+        ruoli_patterns = [
+            (r"(?:progettist\w+\s+(?:struttur\w+|architetton\w+|impiantist\w+))", None),
+            (r"(?:direttore\s+(?:dei\s+)?lavori)", None),
+            (r"(?:coordinatore\s+(?:per\s+la\s+)?sicurezza\s+in\s+fase\s+di\s+(?:progettazione|esecuzione))", None),
+            (r"(?:geologo)", None),
+            (r"(?:collaudator\w+\s+(?:struttur\w+|static\w+|tecnico\s+amministrativ\w+)?)", None),
+            (r"(?:direttore\s+operativo)", None),
+            (r"(?:ispettore\s+di\s+cantiere)", None),
+            (r"(?:responsabile\s+(?:della\s+)?integrazione)", None),
+            (r"(?:professionista\s+antincendio)", None),
+            (r"(?:tecnico\s+competente\s+in\s+acustica)", None),
+            (r"(?:coordinatore\s+del\s+gruppo)", None),
+            (r"(?:coordinatore\s+della\s+progettazione)", None),
+            (r"(?:BIM\s+manager|BIM\s+coordinator|BIM\s+specialist)", None),
+            (r"(?:esperto\s+ambientale|esperto\s+CAM)", None),
+            (r"(?:topografo)", None),
+            # "Tecnico esperto in/di ..." (generico, cattura ruoli specialistici)
+            (r"(?:tecnico\s+esperto\s+(?:in|di)\s+[^\n]{5,200}?)(?=\n|\s{2,}|Laurea)", None),
+        ]
+        for pat, _ in ruoli_patterns:
+            matches = re.findall(pat, text, re.IGNORECASE)
+            for m in matches:
+                role = _clean(m)
+                if not role:
+                    continue
+                # Dedup: controlla corrispondenza esatta, prefisso comune (primi 40 car) o sottostringhe
+                rl = role.lower()
+                is_dup = any(
+                    rl == ex or rl[:40] == ex[:40] or rl.startswith(ex[:40]) or ex.startswith(rl[:40])
+                    or rl in ex or ex in rl
+                    for ex in (f.get("ruolo", "").lower() for f in figure)
+                )
+                if is_dup:
+                    continue
+                entry = {"ruolo": role}
+                # Cerca requisiti specifici vicino alla menzione
+                idx_r = text_lower.find(role.lower())
+                if idx_r >= 0:
+                    ctx = text[idx_r:idx_r + 500]
+                    m_req_r = re.search(r"(?:abilitazione|iscrizione|iscritt\w+)\s+([^.]{10,300})", ctx, re.IGNORECASE)
+                    if m_req_r:
+                        entry["requisiti"] = _clean(m_req_r.group(0))
+                entry["_pos"] = idx_r
+                figure.append(entry)
 
     # Post-dedup: remove shorter roles that appear within the description of a longer role
     if len(figure) > 1:
@@ -1666,6 +1844,21 @@ def extract_rules_based(text: str) -> dict:
     )
     if cumul_found or non_cumul:
         gdl["ruoli_cumulabili"] = cumul_found and not non_cumul
+
+    # Numero minimo professionisti nel GDL
+    m_num_min = re.search(
+        r"(?:gruppo\s+di\s+lavoro|struttura\s+operativa)[^.]{0,200}?"
+        r"(?:composto\s+(?:da\s+)?(?:almeno\s+|minimo\s+)?|"
+        r"almeno\s+|minimo\s+|non\s+inferiore\s+a\s+)"
+        r"(\d+)\s*(?:professionisti|componenti|soggetti|unit[àa])",
+        text, re.IGNORECASE | re.DOTALL,
+    )
+    if not m_num_min:
+        # Fallback: conta le figure professionali estratte
+        if len(gdl.get("figure_professionali", [])) >= 2:
+            gdl["numero_minimo_professionisti"] = len(gdl["figure_professionali"])
+    else:
+        gdl["numero_minimo_professionisti"] = int(m_num_min.group(1))
 
     # ======================================================================
     # G) CRITERI DI VALUTAZIONE

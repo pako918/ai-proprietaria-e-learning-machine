@@ -155,8 +155,8 @@ class PatternLearner:
             if pattern:
                 learned.append(pattern)
                 logger.info(
-                    f"Pattern appreso per '{field}': "
-                    f"prefix='{prefix[:50]}...' → regex='{prefix_regex[:60]}...'"
+                    "Pattern appreso per '%s': prefix='%s...' \u2192 regex='%s...'",
+                    field, prefix[:50], prefix_regex[:60]
                 )
 
         # Logga la correzione
@@ -188,7 +188,7 @@ class PatternLearner:
                             pat["id"]
                         ))
             except Exception as e:
-                logger.debug(f"Pattern {pat['id']} failed for {field}: {e}")
+                logger.debug("Pattern %s failed for %s: %s", pat['id'], field, e)
 
         # Ordina per confidenza decrescente
         results.sort(key=lambda x: x[1], reverse=True)
@@ -642,7 +642,7 @@ class AutoTrainer:
         """
         from ml_engine import ml_engine
 
-        logger.info(f"Auto-training attivato per '{field}'")
+        logger.info("Auto-training attivato per '%s'", field)
 
         # Metriche prima
         old_model = ml_engine.models.get(field)
@@ -679,8 +679,8 @@ class AutoTrainer:
             )
 
         logger.info(
-            f"Auto-training '{field}': {result.get('status')} "
-            f"(prima: {accuracy_before}, dopo: {accuracy_after})"
+            "Auto-training '%s': %s (prima: %s, dopo: %s)",
+            field, result.get('status'), accuracy_before, accuracy_after
         )
 
         return result
@@ -953,7 +953,7 @@ class SmartLearner:
                 train_result = self.auto_trainer.execute_auto_train(field_to_train)
                 response["auto_train_result"] = train_result
             except Exception as e:
-                logger.warning(f"Auto-training fallito per '{field}': {e}")
+                logger.warning("Auto-training fallito per '%s': %s", field, e)
                 response["auto_train_result"] = {"status": "error", "message": str(e)}
 
         return response

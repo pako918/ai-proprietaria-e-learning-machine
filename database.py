@@ -20,9 +20,10 @@ def get_connection(readonly: bool = False):
             conn.execute("INSERT INTO ...", params)
         # commit automatico all'uscita, rollback su eccezione
     """
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
     if readonly:
         conn.execute("PRAGMA query_only=ON")
     try:
@@ -184,6 +185,11 @@ def init_custom_fields_table():
         """)
 
 
+# Tabelle e colonne validate — solo queste sono ammesse nelle migrazioni
+_VALID_TABLES = frozenset({"documents", "training_samples", "model_versions"})
+_VALID_COLUMNS = frozenset({"full_text", "model_version", "source", "is_active", "notes"})
+
+
 def _run_migrations(conn: sqlite3.Connection):
     """Migrazioni sicure per colonne opzionali."""
     migrations = [
@@ -194,6 +200,9 @@ def _run_migrations(conn: sqlite3.Connection):
         ("model_versions", "notes", "TEXT"),
     ]
     for table, column, col_type in migrations:
+        if table not in _VALID_TABLES or column not in _VALID_COLUMNS:
+            logger.warning("Skipping invalid migration: %s.%s", table, column)
+            continue
         try:
             conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
         except sqlite3.OperationalError:

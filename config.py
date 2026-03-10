@@ -17,9 +17,14 @@ MODEL_DIR = BASE_DIR / "models"
 UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "learning.db"
 
-# Crea directory necessarie
-for _dir in (DATA_DIR, MODEL_DIR, UPLOAD_DIR):
-    _dir.mkdir(parents=True, exist_ok=True)
+
+def ensure_dirs():
+    """Crea le directory necessarie. Chiamata all'avvio dell'applicazione."""
+    for _dir in (DATA_DIR, MODEL_DIR, UPLOAD_DIR):
+        _dir.mkdir(parents=True, exist_ok=True)
+
+
+ensure_dirs()
 
 # ═════════════════════════════════════════════════════════════════════════════
 # SERVER

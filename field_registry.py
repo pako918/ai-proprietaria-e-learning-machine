@@ -79,13 +79,13 @@ def _validate_importi(v):
     try:
         n = float(str(v).replace('.', '').replace(',', '.').replace('€', '').strip())
         return 0 < n < 50_000_000_000
-    except:
+    except (ValueError, TypeError):
         return False
 
 def _validate_punteggi(v):
     try:
         return 0 <= int(v) <= 100
-    except:
+    except (ValueError, TypeError):
         return False
 
 def _validate_date(v):

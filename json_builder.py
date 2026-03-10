@@ -12,6 +12,7 @@ from typing import Optional
 from output_schema import (
     AppaltoOutput,
     LottoImporto,
+    PrestazioneLotto,
     DescrizioneLavori,
     RUP,
     StazioneAppaltante,
@@ -34,6 +35,8 @@ from output_schema import (
     VincoliPartecipazione,
     TempistichEsecuzione,
     GaranziaProvvisoria,
+    GaranziaDefinitiva,
+    PolizzaRC,
     RevisionePrezzi,
 )
 
@@ -118,6 +121,16 @@ def build_output(nested: dict) -> dict:
             importo_euro=importo,
             quota_fissa_65_percento_euro=quota_fissa,
             quota_ribassabile_35_percento_euro=quota_rib,
+            prestazioni=[
+                PrestazioneLotto(
+                    descrizione=p.get("descrizione"),
+                    codice_CPV=p.get("codice_CPV"),
+                    tipo=p.get("tipo"),
+                    importo=_parse_float(p.get("importo")),
+                )
+                for p in lotto.get("prestazioni", [])
+                if isinstance(p, dict)
+            ],
         ))
 
     # Tipologia: determiniamo dal tipo_procedura
@@ -192,7 +205,7 @@ def build_output(nested: dict) -> dict:
         if not isinstance(fig, dict):
             continue
         profili.append(ProfiloRichiesto(
-            numero=1,
+            numero=fig.get("numero", i + 1),
             ruolo=fig.get("ruolo"),
             requisiti=fig.get("requisiti"),
         ))
@@ -205,6 +218,8 @@ def build_output(nested: dict) -> dict:
             note_idon = "Obbligo giovane professionista nel gruppo di lavoro"
         req_idon = RequisitiIdoneitaProfessionale(
             profili_richiesti=profili,
+            numero_minimo_professionisti=gdl.get("numero_minimo_professionisti"),
+            ruoli_cumulabili=gdl.get("ruoli_cumulabili"),
             note=note_idon,
         )
 
@@ -496,34 +511,30 @@ def build_output(nested: dict) -> dict:
     # ── Garanzia provvisoria ──
     gp_raw = gar.get("garanzia_provvisoria", {})
     gd_raw = gar.get("garanzia_definitiva", {})
+    pol_raw = gar.get("polizza_RC_professionale", {})
+
     gar_prov = None
-    if gp_raw or gd_raw:
-        richiesta = gp_raw.get("dovuta", False) if isinstance(gp_raw, dict) else False
-        gd_perc = _parse_float(gd_raw.get("percentuale")) if isinstance(gd_raw, dict) else None
-        note_gar_parts = []
-        # Garanzia provvisoria dettagli
-        if isinstance(gp_raw, dict):
-            gp_perc = gp_raw.get("percentuale")
-            gp_importo = gp_raw.get("importo")
-            if gp_perc:
-                note_gar_parts.append(f"Provvisoria: {gp_perc}% dell'importo base")
-            if gp_importo:
-                note_gar_parts.append(f"Importo provvisoria: € {gp_importo:,.2f}")
-        # Garanzia definitiva
-        if gd_perc:
-            note_gar_parts.append(f"Definitiva: {gd_perc}% del corrispettivo")
-        elif isinstance(gd_raw, dict) and gd_raw.get("dovuta"):
-            note_gar_parts.append("Garanzia definitiva richiesta")
-        # Polizza RC
-        pol_raw = gar.get("polizza_RC_professionale", {})
-        if isinstance(pol_raw, dict) and pol_raw.get("richiesta"):
-            copertura = pol_raw.get("copertura", "")
-            note_gar_parts.append(f"Polizza RC professionale richiesta{': ' + copertura if copertura else ''}")
-        note_gar = ". ".join(note_gar_parts) if note_gar_parts else None
+    if isinstance(gp_raw, dict) and (gp_raw.get("dovuta") or gp_raw.get("percentuale") or gp_raw.get("importo")):
         gar_prov = GaranziaProvvisoria(
-            richiesta=richiesta,
-            garanzia_definitiva_percentuale=gd_perc,
-            note=note_gar,
+            richiesta=gp_raw.get("dovuta", False),
+            percentuale=_parse_float(gp_raw.get("percentuale")),
+            importo=_parse_float(gp_raw.get("importo")),
+        )
+
+    # ── Garanzia definitiva ──
+    gar_def = None
+    if isinstance(gd_raw, dict) and (gd_raw.get("dovuta") or gd_raw.get("percentuale")):
+        gar_def = GaranziaDefinitiva(
+            richiesta=gd_raw.get("dovuta", False),
+            percentuale=_parse_float(gd_raw.get("percentuale")),
+        )
+
+    # ── Polizza RC professionale ──
+    pol_rc = None
+    if isinstance(pol_raw, dict) and pol_raw.get("richiesta"):
+        pol_rc = PolizzaRC(
+            richiesta=True,
+            copertura=pol_raw.get("copertura"),
         )
 
     # ── Revisione prezzi ──
@@ -541,10 +552,6 @@ def build_output(nested: dict) -> dict:
         note_list.append(f"Procedura suddivisa in {n_lotti} lotti")
     if tp.get("inversione_procedimentale"):
         note_list.append("Possibile inversione procedimentale ex art. 107 comma 3")
-    cam = nested.get("CAM_criteri_ambientali", {})
-    if isinstance(cam, dict) and cam.get("applicabili"):
-        decreto = cam.get("decreto_riferimento", "")
-        note_list.append(f"Conformità ai CAM {decreto}".strip())
     sic = nested.get("sicurezza", {})
     duvri = sic.get("DUVRI", {}) if isinstance(sic, dict) else {}
     if isinstance(duvri, dict) and duvri.get("richiesto") is False:
@@ -552,13 +559,6 @@ def build_output(nested: dict) -> dict:
         note_list.append(f"DUVRI non previsto{': ' + nota_duvri if nota_duvri else ''}")
     elif isinstance(duvri, dict) and duvri.get("richiesto"):
         note_list.append("DUVRI richiesto")
-    nuts = ig.get("codice_NUTS")
-    if nuts:
-        note_list.append(f"Codice NUTS: {nuts}")
-    # CPV
-    cpv = ig.get("CPV_principale")
-    if cpv:
-        note_list.append(f"CPV principale: {cpv}")
     # Subappalto
     sub = nested.get("subappalto", {})
     if isinstance(sub, dict):
@@ -624,10 +624,21 @@ def build_output(nested: dict) -> dict:
     if _validita:
         note_list.append(f"Validità offerta: {_validita} giorni")
 
+    # ── CAM ──
+    cam = nested.get("CAM_criteri_ambientali", {})
+    cam_str = None
+    if isinstance(cam, dict) and cam.get("applicabili"):
+        decreto = cam.get("decreto_riferimento", "")
+        cam_str = f"Conformità ai CAM {decreto}".strip()
+
     # ── Costruzione modello ──
     output = AppaltoOutput(
         cig=cig_dict,
         cup=cup,
+        codice_NUTS=ig.get("codice_NUTS"),
+        CPV_principale=ig.get("CPV_principale"),
+        procedura_tipo=tipo_proc or None,
+        criterio_aggiudicazione=criterio or None,
         oggetto_appalto=oggetto,
         descrizione_lavori_con_importo_totale=descr_lavori,
         stazione_appaltante=sa,
@@ -645,6 +656,9 @@ def build_output(nested: dict) -> dict:
         vincoli_partecipazione=vincoli,
         tempistiche_esecuzione=temp_exec,
         garanzia_provvisoria=gar_prov,
+        garanzia_definitiva=gar_def,
+        polizza_RC_professionale=pol_rc,
+        CAM_criteri_ambientali=cam_str,
         revisione_prezzi=rev,
         note_particolari=note_list,
     )

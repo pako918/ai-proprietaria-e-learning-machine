@@ -516,6 +516,10 @@ const SECTIONS = [
     { key: 'cup', label: 'CUP', icon: '📌', mono: true },
     { key: 'oggetto_appalto', label: 'Oggetto della Gara', icon: '📋', highlight: true, fullWidth: true },
     { key: 'tipologia_appalto', label: 'Tipologia Appalto', icon: '⚖️', fullWidth: true },
+    { key: 'procedura_tipo', label: 'Tipo Procedura', icon: '📑' },
+    { key: 'criterio_aggiudicazione', label: 'Criterio Aggiudicazione', icon: '🏆' },
+    { key: 'CPV_principale', label: 'CPV Principale', icon: '🏷️', mono: true },
+    { key: 'codice_NUTS', label: 'Codice NUTS', icon: '📍', mono: true },
     { key: 'scadenza', label: 'Scadenza', icon: '📅', highlight: true },
   ]},
   // ═══════ 2. STAZIONE APPALTANTE ═══════
@@ -560,8 +564,11 @@ const SECTIONS = [
   // ═══════ 14. GARANZIE ═══════
   { title: "Garanzie", icon: "🔒", id: "garanzie", fields: [
     { key: 'garanzia_provvisoria.richiesta', label: 'Provvisoria Richiesta', icon: '🔒', boolean: true, path: ['garanzia_provvisoria','richiesta'] },
-    { key: 'garanzia_provvisoria.garanzia_definitiva_percentuale', label: 'Definitiva %', icon: '🔒', path: ['garanzia_provvisoria','garanzia_definitiva_percentuale'] },
-    { key: 'garanzia_provvisoria.note', label: 'Note Garanzie', icon: '📝', fullWidth: true, path: ['garanzia_provvisoria','note'] },
+    { key: 'garanzia_provvisoria.percentuale', label: 'Provvisoria %', icon: '📊', path: ['garanzia_provvisoria','percentuale'] },
+    { key: 'garanzia_definitiva.richiesta', label: 'Definitiva Richiesta', icon: '🔒', boolean: true, path: ['garanzia_definitiva','richiesta'] },
+    { key: 'garanzia_definitiva.percentuale', label: 'Definitiva %', icon: '📊', path: ['garanzia_definitiva','percentuale'] },
+    { key: 'polizza_RC_professionale.richiesta', label: 'Polizza RC Richiesta', icon: '🛡️', boolean: true, path: ['polizza_RC_professionale','richiesta'] },
+    { key: 'polizza_RC_professionale.copertura', label: 'Copertura RC', icon: '📝', fullWidth: true, path: ['polizza_RC_professionale','copertura'] },
   ]},
   // ═══════ 15. TEMPISTICHE ESECUZIONE ═══════
   { title: "Tempistiche Esecuzione", icon: "⏱", id: "tempistiche", fields: [
@@ -573,7 +580,11 @@ const SECTIONS = [
     { key: 'revisione_prezzi.ammessa', label: 'Ammessa', icon: '📈', boolean: true, path: ['revisione_prezzi','ammessa'] },
     { key: 'revisione_prezzi.soglia_percentuale', label: 'Soglia %', icon: '📊', path: ['revisione_prezzi','soglia_percentuale'] },
   ]},
-  // ═══════ 17. NOTE PARTICOLARI ═══════
+  // ═══════ 17. CAM ═══════
+  { title: "CAM - Criteri Ambientali Minimi", icon: "🌱", id: "cam", fields: [
+    { key: 'CAM_criteri_ambientali', label: 'CAM', icon: '🌱', fullWidth: true },
+  ]},
+  // ═══════ 18. NOTE PARTICOLARI ═══════
   { title: "Note Particolari", icon: "⚠️", id: "note-particolari", fields: [] },
 ];
 
@@ -850,6 +861,20 @@ function showResults(data, filename) {
         h += '</tbody></table></div>';
         const lottiWrap = document.createElement('div'); lottiWrap.className = 'result-grid'; lottiWrap.innerHTML = h;
         sec.appendChild(lottiWrap);
+
+        // Prestazioni per lotto
+        lotti.forEach(l => {
+          const prest = l.prestazioni || [];
+          if (prest.length > 0) {
+            let ph = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">📋</span>Prestazioni Lotto ${l.lotto}</div><table class="lotti-table"><thead><tr><th>Descrizione</th><th>CPV</th><th>Tipo</th><th>Importo</th></tr></thead><tbody>`;
+            prest.forEach(p => {
+              ph += `<tr><td style="font-size:0.82rem">${escapeHtml(p.descrizione||'—')}</td><td style="font-family:var(--font-m)">${escapeHtml(p.codice_CPV||'—')}</td><td>${escapeHtml(p.tipo||'—')}</td><td style="color:var(--ok);font-family:var(--font-m)">${p.importo!=null ? fmtEuro(p.importo) : '—'}</td></tr>`;
+            });
+            ph += '</tbody></table></div>';
+            const prestWrap = document.createElement('div'); prestWrap.className = 'result-grid'; prestWrap.innerHTML = ph;
+            sec.appendChild(prestWrap);
+          }
+        });
       }
       // Note
       if (dl && dl.note) {
@@ -908,6 +933,17 @@ function showResults(data, filename) {
     if (section.id === 'figure-professionali') {
       const rip = data.requisiti_idoneita_professionale;
       const profili = _get(rip, 'profili_richiesti') || [];
+
+      // Info GDL: numero minimo e cumulabilità
+      if (rip && (rip.numero_minimo_professionisti != null || rip.ruoli_cumulabili != null)) {
+        const infoGrid = document.createElement('div'); infoGrid.className = 'result-grid';
+        if (rip.numero_minimo_professionisti != null)
+          infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">👥</span>N. Minimo Professionisti</div></div><div class="result-value" style="font-size:1.2rem;font-weight:600">${rip.numero_minimo_professionisti}</div></div>`;
+        if (rip.ruoli_cumulabili != null)
+          infoGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">🔄</span>Ruoli Cumulabili</div></div><div class="result-value">${rip.ruoli_cumulabili ? '<span style="color:var(--ok)">✅ Sì</span>' : '<span style="color:var(--danger)">❌ No</span>'}</div></div>`;
+        sec.appendChild(infoGrid);
+      }
+
       if (profili.length > 0) {
         let h = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">👤</span>Profili Richiesti</div><table class="lotti-table"><thead><tr><th>N.</th><th>Ruolo</th><th>Requisiti</th></tr></thead><tbody>`;
         profili.forEach(p => {

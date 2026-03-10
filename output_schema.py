@@ -12,6 +12,14 @@ from pydantic import BaseModel, Field
 # SUB-MODELLI
 # ═════════════════════════════════════════════════════════════════════════════
 
+class PrestazioneLotto(BaseModel):
+    """Singola prestazione di un lotto."""
+    descrizione: Optional[str] = None
+    codice_CPV: Optional[str] = None
+    tipo: Optional[str] = None
+    importo: Optional[float] = None
+
+
 class LottoImporto(BaseModel):
     """Singolo lotto con importi e quote."""
     lotto: int
@@ -19,6 +27,7 @@ class LottoImporto(BaseModel):
     importo_euro: Optional[float] = None
     quota_fissa_65_percento_euro: Optional[float] = None
     quota_ribassabile_35_percento_euro: Optional[float] = None
+    prestazioni: List[PrestazioneLotto] = Field(default_factory=list)
 
 
 class DescrizioneLavori(BaseModel):
@@ -51,6 +60,8 @@ class ProfiloRichiesto(BaseModel):
 class RequisitiIdoneitaProfessionale(BaseModel):
     """Requisiti di idoneità professionale."""
     profili_richiesti: List[ProfiloRichiesto] = Field(default_factory=list)
+    numero_minimo_professionisti: Optional[int] = None
+    ruoli_cumulabili: Optional[bool] = None
     note: Optional[str] = None
 
 
@@ -181,7 +192,22 @@ class TempistichEsecuzione(BaseModel):
 class GaranziaProvvisoria(BaseModel):
     """Garanzia provvisoria."""
     richiesta: bool = False
-    garanzia_definitiva_percentuale: Optional[float] = None
+    percentuale: Optional[float] = None
+    importo: Optional[float] = None
+    note: Optional[str] = None
+
+
+class GaranziaDefinitiva(BaseModel):
+    """Garanzia definitiva."""
+    richiesta: bool = False
+    percentuale: Optional[float] = None
+    note: Optional[str] = None
+
+
+class PolizzaRC(BaseModel):
+    """Polizza RC professionale."""
+    richiesta: bool = False
+    copertura: Optional[str] = None
     note: Optional[str] = None
 
 
@@ -204,6 +230,10 @@ class AppaltoOutput(BaseModel):
     # Identificativi
     cig: Optional[Dict[str, str]] = None
     cup: Optional[str] = None
+    codice_NUTS: Optional[str] = None
+    CPV_principale: Optional[str] = None
+    procedura_tipo: Optional[str] = None
+    criterio_aggiudicazione: Optional[str] = None
 
     # Oggetto
     oggetto_appalto: Optional[str] = None
@@ -245,6 +275,11 @@ class AppaltoOutput(BaseModel):
 
     # Garanzie
     garanzia_provvisoria: Optional[GaranziaProvvisoria] = None
+    garanzia_definitiva: Optional[GaranziaDefinitiva] = None
+    polizza_RC_professionale: Optional[PolizzaRC] = None
+
+    # CAM
+    CAM_criteri_ambientali: Optional[str] = None
 
     # Revisione prezzi
     revisione_prezzi: Optional[RevisionePrezzi] = None

@@ -402,7 +402,7 @@ class FieldModel:
                         "cv_scores": [float(s) for s in scores],
                     }
             except Exception as e:
-                logger.warning(f"CV failed for {self.field}: {e}")
+                logger.warning("CV failed for %s: %s", self.field, e)
 
         # ── Training finale su TUTTI i dati ──────────────────────
         classifier = LogisticRegression(
@@ -502,7 +502,7 @@ class FieldModel:
             return str(value), confidence
 
         except Exception as e:
-            logger.warning(f"Prediction failed for {self.field}: {e}")
+            logger.warning("Prediction failed for %s: %s", self.field, e)
             return None, 0.0
 
     def predict_top_k(self, text: str, k: int = 3) -> List[Tuple[str, float]]:
@@ -582,7 +582,7 @@ class MLEngine:
         try:
             migrated = self.data.migrate_from_old_tables()
             if migrated > 0:
-                logger.info(f"Migrati {migrated} esempi dalla vecchia tabella")
+                logger.info("Migrati %d esempi dalla vecchia tabella", migrated)
         except Exception:
             pass
 
@@ -595,12 +595,12 @@ class MLEngine:
                 fm = FieldModel.load(mf)
                 self.models[field] = fm
                 logger.info(
-                    f"Caricato modello ML: {field} "
-                    f"(v{fm.version}, {fm.n_samples} campioni, "
-                    f"acc={fm.metrics.get('accuracy', 'N/A')})"
+                    "Caricato modello ML: %s (v%s, %d campioni, acc=%s)",
+                    field, fm.version, fm.n_samples,
+                    fm.metrics.get('accuracy', 'N/A')
                 )
             except Exception as e:
-                logger.warning(f"Errore caricamento {mf}: {e}")
+                logger.warning("Errore caricamento %s: %s", mf, e)
 
         # Vecchi modelli (formato model_*) — importazione compatibilità
         for mf in MODEL_DIR.glob("model_*.pkl"):
@@ -614,7 +614,7 @@ class MLEngine:
                     fm.version = 1
                     fm.trained_at = datetime.now().isoformat()
                     self.models[field] = fm
-                    logger.info(f"Importato vecchio modello: {field}")
+                    logger.info("Importato vecchio modello: %s", field)
                 except Exception:
                     pass
 

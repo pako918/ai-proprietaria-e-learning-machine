@@ -23,9 +23,11 @@ PRINCIPI CHIAVE:
 import hashlib
 import io
 import json
+import os
 import pickle
 import re
 import shutil
+import tempfile
 import time
 from datetime import datetime
 from typing import Optional, Dict, List, Tuple, Any
@@ -649,7 +651,6 @@ class Pipeline:
         #   per ottenere testo piu fedele alle tabelle originali
         try:
             if pdf_bytes:
-                import tempfile, os
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                     tmp.write(pdf_bytes)
                     tmp_path = tmp.name
@@ -661,36 +662,13 @@ class Pipeline:
             else:
                 nested_result = disciplinari_extract(text)
 
-            # ── Debug: log nested extraction result structure ──
-            def _log_nested(d, prefix="", depth=0):
-                if depth > 3 or not isinstance(d, dict):
-                    return
-                for k, v in d.items():
-                    if isinstance(v, dict):
-                        non_empty = sum(1 for vv in v.values() if vv not in [None, "", [], {}])
-                        logger.info("  NESTED %s%s: {dict %d keys, %d filled}", prefix, k, len(v), non_empty)
-                        _log_nested(v, f"{prefix}{k}.", depth + 1)
-                    elif isinstance(v, list):
-                        logger.info("  NESTED %s%s: [list %d items]", prefix, k, len(v))
-                    elif v not in [None, "", False, 0]:
-                        val_str = str(v)[:80]
-                        logger.info("  NESTED %s%s: %s", prefix, k, val_str)
-            logger.info("=== NESTED EXTRACTION RESULT (sections: %d) ===", len(nested_result))
-            _log_nested(nested_result)
+            logger.debug("Nested extraction: %d sections", len(nested_result))
 
             rules_result, methods = build_output_with_methods(nested_result)
-            logger.info("=== BUILD_OUTPUT result keys: %d, methods: %d ===",
-                        len(rules_result), len(methods))
-            for k, v in rules_result.items():
-                if not k.startswith("_"):
-                    val_preview = str(v)[:100] if v is not None else "None"
-                    logger.info("  OUTPUT %s: %s", k, val_preview)
+            logger.debug("Build output: %d keys, %d methods", len(rules_result), len(methods))
             snippets = {}
-        except Exception as _exc:
-            # Fallback al vecchio estrattore base se il nuovo fallisce
-            import traceback, sys
-            print(f"[WARN] disciplinari extractor failed: {_exc}", file=sys.stderr)
-            traceback.print_exc(file=sys.stderr)
+        except Exception:
+            logger.warning("Disciplinari extractor failed, falling back to rules", exc_info=True)
             rules_result, snippets, methods = self.rules.extract(text)
 
         # FASE 3: NLP classificazione (arricchisce tipologia se mancante)

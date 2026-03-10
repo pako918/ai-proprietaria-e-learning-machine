@@ -4,10 +4,6 @@ API REST — Pipeline 9 fasi — Training SOLO supervisionato
 """
 
 import json
-import sys
-import os
-
-sys.path.insert(0, os.path.dirname(__file__))
 
 from config import (
     BASE_DIR, CORS_ORIGINS, SERVER_HOST, SERVER_PORT,
@@ -18,6 +14,8 @@ from database import get_connection
 from pipeline import pipeline
 from field_registry import registry
 from schemas import full_validation
+from ml_engine import ml_engine as ml_eng
+from smart_learner import smart_learner as sl
 
 setup_logging()
 logger = get_logger("server")
@@ -290,8 +288,9 @@ if HAS_FASTAPI:
             raise HTTPException(404, f"Campo custom '{key}' non trovato")
         return {"status": "ok"}
 
-    # ══════════════════════════════════════════════════════════════════════    # ML ENGINE — Machine Learning (il modello impara dai dati)
-    # ══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
+    # ML ENGINE — Machine Learning
+    # ══════════════════════════════════════════════════════════════════════
 
     @app.get("/api/ml/status")
     async def ml_status():
@@ -316,25 +315,21 @@ if HAS_FASTAPI:
     @app.get("/api/ml/learning-curve/{field}")
     async def ml_learning_curve(field: str):
         """Curva di apprendimento: come l'accuracy migliora con più dati."""
-        from ml_engine import ml_engine as ml_eng
         return ml_eng.get_learning_curve(field)
 
     @app.get("/api/ml/data")
     async def ml_data_stats():
         """Statistiche dataset di training ML."""
-        from ml_engine import ml_engine as ml_eng
         return ml_eng.data.get_data_quality()
 
     @app.get("/api/ml/data/{field}")
     async def ml_data_field(field: str):
         """Statistiche dati per un campo specifico."""
-        from ml_engine import ml_engine as ml_eng
         return ml_eng.data.get_data_quality(field)
 
     @app.post("/api/ml/rollback/{field}")
     async def ml_rollback(field: str):
         """Ripristina il modello precedente."""
-        from ml_engine import ml_engine as ml_eng
         result = ml_eng.rollback_field(field)
         if result.get("status") == "error":
             raise HTTPException(400, result["message"])
@@ -343,10 +338,10 @@ if HAS_FASTAPI:
     @app.get("/api/ml/versions")
     async def ml_model_versions(field: str = Query(None)):
         """Storico versioni modelli ML."""
-        from ml_engine import ml_engine as ml_eng
         return ml_eng.get_model_versions(field)
 
-    # ══════════════════════════════════════════════════════════════════════    # PIPELINE STATUS
+    # ══════════════════════════════════════════════════════════════════════
+    # PIPELINE STATUS
     # ══════════════════════════════════════════════════════════════════════
 
     @app.get("/api/pipeline/status")
@@ -369,21 +364,17 @@ if HAS_FASTAPI:
 
     @app.get("/api/learning/status")
     async def learning_status():
-        """Stato completo del sistema di apprendimento progressivo:
-        pattern appresi, auto-training, valutazione qualità."""
-        from smart_learner import smart_learner as sl
+        """Stato completo del sistema di apprendimento progressivo."""
         return sl.get_full_status()
 
     @app.get("/api/learning/patterns/{field}")
     async def learning_patterns(field: str):
         """Pattern strutturali appresi per un campo specifico."""
-        from smart_learner import smart_learner as sl
         return sl.patterns.get_field_stats(field)
 
     @app.get("/api/learning/evaluation")
     async def learning_evaluation():
         """Valutazione qualità estrazioni con trend e campi problematici."""
-        from smart_learner import smart_learner as sl
         return {
             "field_quality": sl.evaluator.evaluate_field_quality(),
             "problematic_fields": sl.evaluator.get_problematic_fields(),
@@ -392,7 +383,6 @@ if HAS_FASTAPI:
     @app.get("/api/learning/auto-train")
     async def auto_train_status():
         """Stato dell'auto-trainer: correzioni pendenti, soglie, storico."""
-        from smart_learner import smart_learner as sl
         return sl.auto_trainer.get_status()
 
     # ── LEGACY COMPATIBILITY STUBS ────────────────────────────────────────
@@ -404,7 +394,6 @@ if HAS_FASTAPI:
 
     @app.get("/api/auto-learn/stats")
     async def auto_learn_stats():
-        from smart_learner import smart_learner as sl
         return sl.auto_trainer.get_status()
 
     @app.post("/api/quarantine/{qid}/approve")
