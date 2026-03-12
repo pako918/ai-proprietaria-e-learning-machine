@@ -2088,6 +2088,15 @@ def extract_rules_based(text: str) -> dict:
                 "livello": "sub_criterio" if is_sub else "criterio",
             })
 
+    # Deduplica per codice: se lo stesso codice appare più volte,
+    # tieni l'entry con punteggio più alto (il totale, non il valore unitario)
+    _seen_codes = {}
+    for c in criteri_parsed:
+        code = c["codice"]
+        if code not in _seen_codes or c["punteggio"] > _seen_codes[code]["punteggio"]:
+            _seen_codes[code] = c
+    criteri_parsed = list(_seen_codes.values())
+
     # Filtra rumore (entries dal TOC, numeri di pagina, ecc.)
     criteri_filtered = [
         c for c in criteri_parsed
