@@ -37,7 +37,7 @@ from pdf_parser import parse_pdf, get_text_with_tables, get_page_for_text, Parse
 from schemas import full_validation
 from ml_engine import ml_engine as ml
 from smart_learner import smart_learner
-from extract_disciplinari import (
+from extractors import (
     extract_rules_based as disciplinari_extract,
     flatten_for_pipeline as disciplinari_flatten,
     extract_text_from_pdf as disciplinari_parse_pdf,
