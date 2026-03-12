@@ -143,6 +143,16 @@
   .lotti-table td, .criteri-table td { padding: 5px 8px; border-bottom: 1px solid #eee; color: var(--ink); }
   .criteri-pts { font-family: var(--font-m); font-weight: 600; color: var(--accent); }
 
+  /* Requisiti badge tags */
+  .req-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; line-height: 1.5; white-space: normal; }
+  .bg-info { background: #e8f4fd; color: #1565c0; }
+  .bg-warning { background: #fff8e1; color: #f57f17; }
+  .bg-primary { background: #ede7f6; color: #4527a0; }
+  .bg-success { background: #e8f5e9; color: #2e7d32; }
+  .bg-accent { background: #fce4ec; color: #c62828; }
+  .bg-muted { background: #f5f5f5; color: #616161; }
+
   /* Coherence panel */
   .coherence-banner { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
   .coherence-title { font-family: var(--font-m); font-size: 0.68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 8px; }
@@ -955,7 +965,20 @@ function showResults(data, filename) {
       if (profili.length > 0) {
         let h = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">👤</span>Profili Richiesti</div><table class="lotti-table"><thead><tr><th>N.</th><th>Ruolo</th><th>Requisiti</th></tr></thead><tbody>`;
         profili.forEach(p => {
-          h += `<tr><td style="font-family:var(--font-m);font-weight:600">${p.numero||1}</td><td style="font-weight:500">${escapeHtml(p.ruolo||'—')}</td><td style="font-size:0.82rem">${escapeHtml(p.requisiti||'—')}</td></tr>`;
+          // Build structured detail tags
+          const detailParts = [];
+          if (p.laurea) detailParts.push(`<span class="badge bg-info">🎓 ${escapeHtml(p.laurea)}</span>`);
+          if (p.diploma) detailParts.push(`<span class="badge bg-info">📜 ${escapeHtml(p.diploma)}</span>`);
+          if (p.abilitazione) detailParts.push(`<span class="badge bg-warning">✅ ${escapeHtml(p.abilitazione)}</span>`);
+          if (p.iscrizione_albo) detailParts.push(`<span class="badge bg-primary">📋 ${escapeHtml(p.iscrizione_albo)}</span>`);
+          if (p.anni_esperienza) detailParts.push(`<span class="badge bg-success">⏱️ ${p.anni_esperienza} anni esperienza</span>`);
+          if (p.esperienza_servizi) detailParts.push(`<span class="badge bg-success">📂 ${escapeHtml(p.esperienza_servizi)}</span>`);
+          if (p.certificazione) detailParts.push(`<span class="badge bg-accent">🏅 ${escapeHtml(p.certificazione)}</span>`);
+          if (p.riferimento_normativo) detailParts.push(`<span class="badge bg-muted">⚖️ ${escapeHtml(p.riferimento_normativo)}</span>`);
+          const reqCell = detailParts.length > 0
+            ? `<div class="req-tags">${detailParts.join(' ')}</div>`
+            : escapeHtml(p.requisiti || '—');
+          h += `<tr><td style="font-family:var(--font-m);font-weight:600">${p.numero||1}</td><td style="font-weight:500">${escapeHtml(p.ruolo||'—')}</td><td style="font-size:0.82rem">${reqCell}</td></tr>`;
         });
         h += '</tbody></table></div>';
         const figWrap = document.createElement('div'); figWrap.className = 'result-grid'; figWrap.innerHTML = h;

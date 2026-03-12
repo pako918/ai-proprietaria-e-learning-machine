@@ -11,6 +11,80 @@ from .utils import _clean, _parse_euro, _section_text
 
 
 # ── helpers interni ──────────────────────────────────────────────────────
+def _parse_requisiti_dettaglio(req_text: str | None) -> dict:
+    """Estrae campi strutturati (laurea, diploma, albo, ecc.) dal testo requisiti."""
+    d: dict = {}
+    if not req_text:
+        return d
+    t = req_text
+
+    # Laurea
+    m = re.search(
+        r"[Ll]aurea\s+(?:magistrale|triennale|specialistica|quinquennale)?\s*(?:in|di)\s+([^.,;\n]{5,150}?)(?=\s+e\s+|[.,;]|$)",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["laurea"] = _clean(m.group(0))[:200]
+
+    # Diploma
+    m = re.search(
+        r"[Dd]iploma\s+(?:di\s+)?(?:laurea|tecnico|geometra|perito|[^.,;\n]{3,80}?)(?=\s+e\s+|[.,;\n]|$)",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["diploma"] = _clean(m.group(0))[:200]
+
+    # Abilitazione
+    m = re.search(
+        r"[Aa]bilitazione\s+(?:all['’]esercizio|professionale|all['’])?\s*([^.,;]{5,150})",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["abilitazione"] = _clean(m.group(0))[:200]
+
+    # Iscrizione albo
+    m = re.search(
+        r"[Ii]scrizione\s+(?:al|all['’]|agli)\s+(?:relativo\s+)?(?:apposit[io]\s+)?(?:alb[oi]\s+)?(?:professionale?|[^.,;]{3,150}?)(?=[.,;\n]|$)",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["iscrizione_albo"] = _clean(m.group(0))[:200]
+
+    # Anni di esperienza
+    m = re.search(
+        r"(?:almeno\s+)?(\d+)\s+ann[io]\s+d[i']\s*esperienza",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["anni_esperienza"] = int(m.group(1))
+
+    # Esperienza servizi (es. "almeno 1 servizio svolto nel ruolo di ...")
+    m = re.search(
+        r"(?:[Pp]regressa\s+)?[Ee]sperienza\s+(?:documentabile\s+)?(?:di\s+)?almeno\s+\d+\s+servizi?\w*\s+(?:svolt[oie]\s+)?(?:nel\s+ruolo\s+di\s+)?([^(;]{5,100})",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["esperienza_servizi"] = _clean(m.group(0))[:250]
+
+    # Certificazione
+    m = re.search(
+        r"[Cc]ertificazione\s+(?:di\s+Ente\s+terzo|UNI|EN|[^.,;]{3,100}?)(?=[.,;)\n]|$)",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["certificazione"] = _clean(m.group(0))[:200]
+
+    # Riferimento normativo (art., decreto, allegato, ecc.)
+    m = re.search(
+        r"(?:[Rr]equisiti\s+di\s+cui\s+)?(?:all['\u2019'])?(?:art(?:icolo|\.?)\s+\d+(?:[^;\n]|\.(?=\d)){0,120}|decreto\s+legislativo\s+(?:[^;\n]|\.(?=\d)){3,100}|[Aa]llegato\s+[IVX]+\.?\d+(?:[^;\n]|\.(?=\d)){0,80})",
+        t, re.IGNORECASE,
+    )
+    if m:
+        d["riferimento_normativo"] = _clean(m.group(0))[:200]
+
+    return d
+
+
 def _pick_desc_after_code(cells: list[str], code: str) -> str | None:
     """Return the best desc cell that appears AFTER *code* in the row."""
     try:
@@ -399,6 +473,10 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                     entry["requisiti"] = req_clean
                 figure.append(entry)
 
+    # Sanity check: ruoli troppo lunghi → parsing errato della tabella
+    if figure and any(len(f.get("ruolo", "")) > 200 for f in figure):
+        figure.clear()
+
     # ── Strategia 1b: tabella plain-text interleaved ─────────────────────
     if not figure and gdl_table_section:
         has_table_header = bool(re.search(
@@ -479,6 +557,109 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                         entry["requisiti"] = req
                     figure.append(entry)
 
+    # Sanity check: ruoli troppo lunghi → parsing errato
+    if figure and any(len(f.get("ruolo", "")) > 200 for f in figure):
+        figure.clear()
+
+    # ── Strategia 1c: blocchi "Per il professionista [X]" ────────────────
+    if not figure and gdl_table_section and re.search(
+        r"Per\s+il\s+professionista\b", gdl_table_section, re.IGNORECASE,
+    ):
+        # Rimuovi marcatori bold (**) dal testo PDF per regex pulite
+        _gdl_clean = re.sub(r"\*{2,}", "", gdl_table_section)
+        _pp_re = re.compile(
+            r"Per\s+il\s+professionista\s+(.+?)(?=Per\s+il\s+professionista\b"
+            r"|Per\s+i\s+raggruppamenti\b"
+            r"|L[\u2019'']operatore\s+economico\s+è\s+tenuto"
+            r"|N\.B\.\s|$)",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for m_pp in _pp_re.finditer(_gdl_clean):
+            full_block = m_pp.group(1).strip()
+            if not full_block:
+                continue
+
+            # Separa ruolo e requisito al pattern lettera+parentesi: "c) ..."
+            m_req_split = re.search(r"(?:^|\n|\s{2,})([a-z])\)\s+", full_block)
+            if m_req_split:
+                role_raw = full_block[:m_req_split.start()].strip()
+                req_raw = full_block[m_req_split.end():].strip()
+            else:
+                role_raw = full_block
+                req_raw = ""
+
+            # ── Pulizia nome ruolo ──
+            # Pattern A: "Geologo che espleta l'incarico di ..." → "Geologo"
+            m_che = re.match(r"(.+?)\s+che\s+espleta\b", role_raw, re.IGNORECASE)
+            if m_che and len(m_che.group(1).strip()) >= 3:
+                role_clean = m_che.group(1).strip()
+            elif re.match(r"che\s+espleta\b", role_raw, re.IGNORECASE):
+                # Pattern B: "che espleta l'incarico di [desc]" → mappa a ruolo
+                m_di = re.search(r"incaric[oa]\s+di\s+(.+)", role_raw, re.IGNORECASE)
+                if m_di:
+                    desc = m_di.group(1).strip()
+                    dl = desc.lower()
+                    if re.match(r"coordinat", dl):
+                        role_clean = desc[0].upper() + desc[1:]
+                    elif "progettazione" in dl and "sicurezza" not in dl:
+                        role_clean = "Progettista"
+                    elif "direz" in dl or re.match(r"direttor", dl):
+                        role_clean = "Direttore dei lavori"
+                    elif "collaudo" in dl or re.match(r"collaudat", dl):
+                        role_clean = "Collaudatore"
+                    else:
+                        role_clean = desc
+                else:
+                    continue
+            else:
+                # Pattern C: nome diretto "BIM Manager"
+                role_clean = role_raw
+
+            # Rimuovi boilerplate dai requisiti
+            if req_raw:
+                req_raw = re.split(
+                    r"Il\s+concorrente\s+(?:indica|non\s+stabilito)\b"
+                    r"|\[TABELLA\b|Pag\.\s*\d+\s*a\s*\d+"
+                    r"|L[\u2019'']operatore\s+economico\s+è\s+tenuto"
+                    r"|Per\s+i\s+raggruppamenti\s+temporanei"
+                    r"|N\.B\.\s",
+                    req_raw, maxsplit=1, flags=re.IGNORECASE,
+                )[0].strip()
+                # Tronca all'inizio di tabelle pipe-delimited (header/footer PDF)
+                req_raw = re.split(r"\n\s*\|", req_raw, maxsplit=1)[0].strip()
+                # Rimuovi header/footer ripetuti (tabelle PDF)
+                req_raw = re.sub(r"\|[^\n|]*\|", " ", req_raw).strip()
+                req_raw = re.sub(
+                    r"C\.U\.C\.[^\n]{0,300}", "", req_raw,
+                    flags=re.IGNORECASE,
+                ).strip()
+                req_raw = re.sub(
+                    r"Sede\s+Legale[^\n]{0,200}", "", req_raw,
+                    flags=re.IGNORECASE,
+                ).strip()
+                req_raw = re.sub(
+                    r"C\.F\.\s+del\s+comune[^\n]{0,200}", "", req_raw,
+                    flags=re.IGNORECASE,
+                ).strip()
+                req_raw = re.sub(
+                    r"[-\s]*\*?Pagina\s+\d+\*?[-\s]*", " ", req_raw,
+                    flags=re.IGNORECASE,
+                ).strip()
+                req_raw = re.sub(
+                    r"Pag\.\s*\d+\s*a\s*\d+", "", req_raw,
+                    flags=re.IGNORECASE,
+                ).strip()
+                req_raw = re.sub(r"\s{2,}", " ", req_raw).strip()
+
+            role_clean = _clean(role_clean).rstrip(":;,.")
+            req_clean = _clean(req_raw) if req_raw else ""
+
+            if role_clean and 3 <= len(role_clean) <= 200:
+                entry = {"ruolo": role_clean, "numero": len(figure) + 1}
+                if req_clean and len(req_clean) > 3:
+                    entry["requisiti"] = req_clean[:500]
+                figure.append(entry)
+
     # ── Strategia 2 (fallback): regex su testo libero ────────────────────
     if not figure:
         ruoli_patterns = [
@@ -495,6 +676,8 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
             (r"(?:coordinatore\s+del\s+gruppo)", None),
             (r"(?:coordinatore\s+della\s+progettazione)", None),
             (r"(?:BIM\s+manager|BIM\s+coordinator|BIM\s+specialist)", None),
+            (r"(?:CDE\s+manager)", None),
+            (r"(?:archeologo)", None),
             (r"(?:esperto\s+ambientale|esperto\s+CAM)", None),
             (r"(?:topografo)", None),
             (r"(?:tecnico\s+esperto\s+(?:in|di)\s+[^\n]{5,200}?)(?=\n|\s{2,}|Laurea)", None),
@@ -546,6 +729,12 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
         figure = [f for idx, f in enumerate(figure) if idx not in to_remove]
     for f in figure:
         f.pop("_pos", None)
+
+    # ── Arricchisci con dettaglio strutturato ────────────────────────────
+    for f in figure:
+        det = _parse_requisiti_dettaglio(f.get("requisiti"))
+        if det:
+            f["dettaglio"] = det
 
     if figure:
         gdl["figure_professionali"] = figure

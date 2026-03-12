@@ -75,16 +75,89 @@ def check_duplicate(text_hash: str) -> Optional[dict]:
                 result["_cached"] = True
                 result["_cached_doc_id"] = row[0]
                 result["_cached_filename"] = row[1]
+                corrections = {}
                 if row[3]:
-                    corrected = json.loads(row[3])
-                    for k, v in corrected.items():
+                    corrections = json.loads(row[3])
+                    for k, v in corrections.items():
                         if v is not None:
                             result[k] = v
                             result.setdefault("_methods", {})[k] = "corrected"
+                result["_corrections"] = corrections
                 return result
     except Exception:
         logger.warning("Errore check_duplicate per hash %s", text_hash[:16], exc_info=True)
     return None
+
+
+def _score_result(result: dict) -> float:
+    """Calcola un punteggio di qualità per il risultato di estrazione.
+
+    Campi riempiti con dati validi → punteggio alto.
+    Campi strutturati (profili, lotti, criteri) → bonus per completezza.
+    """
+    score = 0.0
+    _EMPTY = (None, [], {}, False, "", 0)
+    _EMPTY_OBJECTS = [
+        {"quota_fissa_65_perc": False, "quota_ribassabile_35_perc": False},
+        {"obbligatorio": False, "note": None},
+    ]
+
+    for key, val in result.items():
+        if key.startswith("_"):
+            continue
+        if val in _EMPTY or val in _EMPTY_OBJECTS:
+            continue
+        # Campo presente → 1 punto base
+        score += 1.0
+
+        # Bonus per strutture complesse ben riempite
+        if isinstance(val, dict):
+            # profili_richiesti dentro requisiti_idoneita_professionale
+            profili = val.get("profili_richiesti", [])
+            if profili:
+                score += len(profili) * 0.5  # ogni profilo = 0.5
+                for p in profili:
+                    if isinstance(p, dict):
+                        # Bonus per campi strutturati (laurea, iscrizione, etc.)
+                        for k in ("laurea", "diploma", "abilitazione", "iscrizione_albo",
+                                  "anni_esperienza", "esperienza_servizi", "certificazione",
+                                  "riferimento_normativo"):
+                            if p.get(k):
+                                score += 0.3
+                        # Penalità per ruolo troppo lungo (muro di testo)
+                        ruolo = p.get("ruolo", "")
+                        if len(ruolo) > 200:
+                            score -= 2.0
+                        # Penalità per requisiti troppo lungo
+                        req = p.get("requisiti", "")
+                        if len(req) > 500:
+                            score -= 1.0
+
+            # lotti
+            lotti = val.get("lotti") if isinstance(val.get("lotti"), list) else None
+            if lotti:
+                score += len(lotti) * 0.3
+
+        elif isinstance(val, list):
+            score += min(len(val), 10) * 0.2  # bonus per lista non vuota
+
+        elif isinstance(val, str):
+            # Penalità per stringhe troppo lunghe (probabile muro di testo)
+            if len(val) > 1000:
+                score -= 0.5
+
+    return round(score, 2)
+
+
+def _merge_with_corrections(new_result: dict, corrections: dict) -> dict:
+    """Applica le correzioni manuali dell'utente sopra il nuovo risultato."""
+    if not corrections:
+        return new_result
+    for k, v in corrections.items():
+        if v is not None:
+            new_result[k] = v
+            new_result.setdefault("_methods", {})[k] = "corrected"
+    return new_result
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -113,21 +186,45 @@ class Pipeline:
         """Pipeline completa per PDF."""
         t_start = time.time()
 
-        # FASE 1: Hash dedup
+        # FASE 1: Hash dedup + smart re-evaluation
         pdf_hash = compute_hash(pdf_bytes)
         cached = check_duplicate(pdf_hash)
-        if cached:
-            cached["_pipeline_phase"] = "cached"
-            cached["_pipeline_time_ms"] = round((time.time() - t_start) * 1000, 1)
-            return cached
+        corrections = cached.pop("_corrections", {}) if cached else {}
 
-        # FASE 2: Parse PDF
+        # FASE 2: Parse PDF (sempre, per ri-estrarre)
         text, parsed = self._parse_pdf(pdf_bytes, filename)
         if not text or len(text.strip()) < 50:
+            if cached:
+                cached["_pipeline_phase"] = "cached"
+                cached["_pipeline_time_ms"] = round((time.time() - t_start) * 1000, 1)
+                return cached
             return {"error": "Impossibile estrarre testo dal PDF", "_pipeline_phase": "parse_failed"}
 
-        # FASI 3-6
+        # FASI 3-6: Estrazione fresca
         result = self._extract_and_build(text, filename, pdf_bytes=pdf_bytes)
+
+        # Confronta con cache: tieni il risultato migliore
+        if cached:
+            old_score = _score_result(cached)
+            new_score = _score_result(result)
+            if new_score >= old_score:
+                logger.info(
+                    "Smart cache: nuova estrazione migliore (%.1f vs %.1f) → aggiorno",
+                    new_score, old_score,
+                )
+                result = _merge_with_corrections(result, corrections)
+                result["_cache_action"] = "updated"
+                result["_score_old"] = old_score
+                result["_score_new"] = new_score
+            else:
+                logger.info(
+                    "Smart cache: estrazione precedente migliore (%.1f vs %.1f) → conservo",
+                    old_score, new_score,
+                )
+                result = _merge_with_corrections(cached, corrections)
+                result["_cache_action"] = "kept"
+                result["_score_old"] = old_score
+                result["_score_new"] = new_score
 
         # Aggiungi metadati PDF
         if parsed and parsed.pages:
@@ -160,11 +257,21 @@ class Pipeline:
 
         text_hash = compute_hash(text)
         cached = check_duplicate(text_hash)
-        if cached:
-            cached["_pipeline_phase"] = "cached"
-            return cached
+        corrections = cached.pop("_corrections", {}) if cached else {}
 
         result = self._extract_and_build(text, filename)
+
+        # Confronta con cache
+        if cached:
+            old_score = _score_result(cached)
+            new_score = _score_result(result)
+            if new_score >= old_score:
+                result = _merge_with_corrections(result, corrections)
+                result["_cache_action"] = "updated"
+            else:
+                result = _merge_with_corrections(cached, corrections)
+                result["_cache_action"] = "kept"
+
         self._save_document(result["_doc_id"], filename, text, result, text_hash)
         result["_pipeline_phase"] = "complete"
         result["_pipeline_time_ms"] = round((time.time() - t_start) * 1000, 1)

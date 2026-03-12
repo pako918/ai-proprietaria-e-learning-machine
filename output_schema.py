@@ -55,6 +55,14 @@ class ProfiloRichiesto(BaseModel):
     numero: int = 1
     ruolo: Optional[str] = None
     requisiti: Optional[str] = None
+    laurea: Optional[str] = None
+    diploma: Optional[str] = None
+    abilitazione: Optional[str] = None
+    iscrizione_albo: Optional[str] = None
+    anni_esperienza: Optional[int] = None
+    esperienza_servizi: Optional[str] = None
+    certificazione: Optional[str] = None
+    riferimento_normativo: Optional[str] = None
 
 
 class RequisitiIdoneitaProfessionale(BaseModel):

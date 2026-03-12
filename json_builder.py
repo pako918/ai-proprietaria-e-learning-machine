@@ -204,10 +204,19 @@ def build_output(nested: dict) -> dict:
     for i, fig in enumerate(figure):
         if not isinstance(fig, dict):
             continue
+        det = fig.get("dettaglio", {})
         profili.append(ProfiloRichiesto(
             numero=fig.get("numero", i + 1),
             ruolo=fig.get("ruolo"),
             requisiti=fig.get("requisiti"),
+            laurea=det.get("laurea"),
+            diploma=det.get("diploma"),
+            abilitazione=det.get("abilitazione"),
+            iscrizione_albo=det.get("iscrizione_albo"),
+            anni_esperienza=det.get("anni_esperienza"),
+            esperienza_servizi=det.get("esperienza_servizi"),
+            certificazione=det.get("certificazione"),
+            riferimento_normativo=det.get("riferimento_normativo"),
         ))
 
     req_idon = None
