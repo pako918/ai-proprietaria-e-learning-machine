@@ -57,6 +57,7 @@ def create_app() -> "FastAPI":
     from routers.documents import router as documents_router
     from routers.learning import router as learning_router
     from routers.adaptive import router as adaptive_router
+    from routers.doe import router as doe_router
 
     application.include_router(core_router)
     application.include_router(extraction_router)
@@ -67,6 +68,7 @@ def create_app() -> "FastAPI":
     application.include_router(documents_router)
     application.include_router(learning_router)
     application.include_router(adaptive_router)
+    application.include_router(doe_router)
 
     return application
 

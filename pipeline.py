@@ -9,6 +9,7 @@ a moduli specializzati per ogni responsabilità.
   Fase 3:  Estrazione deterministica (rules_extractor) + NLP (nlp_classifier)
   Fase 4:  ML Enhancement (ml_engine) + Pattern Learning (smart_learner)
   Fase 4b: Adaptive Enhancement (adaptive_learner) — regole auto-generate + similarità
+  Fase 4c: DOE Refinement (LLM locale) — raffinamento campi deboli via Ollama
   Fase 5:  Costruzione JSON (json_builder)
   Fase 6:  Validazione (schemas) + Salvataggio
   Fase 6b: Post-Extraction Learning — il sistema impara da ogni documento
@@ -46,6 +47,7 @@ from json_builder import build_output, build_output_with_methods
 from rules_extractor import RulesExtractor
 from nlp_classifier import NLPClassifier
 from adaptive_learner import adaptive_learner
+from doe import DOEOrchestrator, SelfLearner
 
 logger = get_logger("pipeline")
 
@@ -97,6 +99,10 @@ class Pipeline:
         self.rules = RulesExtractor()
         self.nlp = NLPClassifier()
         self._last_parsed: Dict[str, ParsedDocument] = {}
+        self.doe = DOEOrchestrator()
+        self.self_learner = SelfLearner(
+            llm=self.doe.llm, directives=self.doe.directives
+        )
         init_main_tables()
 
     # ═══════════════════════════════════════════════════════════════
@@ -239,6 +245,20 @@ class Pipeline:
                         snippets[key] = ctx
         except Exception:
             logger.debug("Adaptive enhancement failed", exc_info=True)
+
+        # FASE 4c: DOE Refinement — LLM locale per campi deboli
+        try:
+            rules_result = self.doe.refine_extraction(
+                rules_result, text, methods
+            )
+            if "_llm_improvements" in rules_result:
+                for key in rules_result["_llm_improvements"]:
+                    methods[key] = {"method": "llm_local", "confidence": 0.6}
+                    ctx = find_value_context(text, str(rules_result.get(key, "")))
+                    if ctx:
+                        snippets[key] = ctx
+        except Exception:
+            logger.debug("DOE refinement failed", exc_info=True)
 
         # FASE 5: Costruzione JSON
         doc_id = hashlib.sha256((filename + text[:500]).encode()).hexdigest()[:16]
@@ -387,6 +407,15 @@ class Pipeline:
         try:
             adaptive_result = adaptive_learner.on_correction(
                 doc_id, field, corrected, original, full_text
+            )
+        except Exception:
+            pass
+
+        # Feed to DOE Self-Learner → evoluzione direttive
+        try:
+            self.self_learner.record_correction(
+                field, original, corrected, training_snippet,
+                reason="correzione_utente"
             )
         except Exception:
             pass
