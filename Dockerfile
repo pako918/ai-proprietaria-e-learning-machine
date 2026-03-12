@@ -11,9 +11,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia il progetto (solo i file necessari)
+# Copia il progetto
 COPY *.py ./
 COPY index.html ./
+COPY routers/ ./routers/
+COPY extractors/ ./extractors/
+COPY doe/ ./doe/
 
 # Crea cartelle dati e utente non-root
 RUN mkdir -p data/uploads models \

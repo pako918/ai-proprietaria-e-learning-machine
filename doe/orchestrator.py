@@ -18,7 +18,6 @@ import re
 from typing import Any
 
 from .config import (
-    MAX_AGENT_STEPS,
     REFINE_CONFIDENCE_THRESHOLD,
     SKIP_LLM_FIELDS,
 )
@@ -121,7 +120,11 @@ class DOEOrchestrator:
         for field, reason in fields_to_refine.items():
             if field in SKIP_LLM_FIELDS:
                 continue
-            improvement = self._refine_field(field, reason, text, result)
+            try:
+                improvement = self._refine_field(field, reason, text, result)
+            except Exception as e:
+                log.warning("LLM refine fallito per %s: %s", field, e)
+                continue
             if improvement and improvement.get("value") is not None:
                 old_val = _get_nested(result, field)
                 new_val = improvement["value"]
@@ -182,101 +185,56 @@ class DOEOrchestrator:
 
     def _refine_field(self, field: str, reason: str,
                       text: str, current_result: dict) -> dict | None:
-        """Ciclo ReAct per raffinare un singolo campo."""
-        text_chunk = text[:8000]
-        current_value = _get_nested(current_result, field)
+        """Estrazione diretta con generate_json — prompt breve e mirato."""
+        # 1. Prova prima con gli strumenti deterministici (no LLM)
+        section = _find_section_for_field(field, text)
+        if not section:
+            section = text[:3000]
 
-        user_prompt = (
-            f'Devo estrarre il campo "{field}" da un disciplinare di gara.\n\n'
-            f'Stato attuale:\n'
-            f'- Valore corrente: {json.dumps(current_value, ensure_ascii=False)}\n'
-            f'- Problema: {reason}\n\n'
-            f'Testo del documento (primi 8000 caratteri):\n---\n{text_chunk}\n---\n\n'
-            f'Trova il valore corretto per "{field}". Se non lo trovi, rispondi null.'
+        # 2. Singola chiamata LLM con prompt compatto
+        directive = self.directives.get_field_directive(field) or ""
+        directive_hint = ""
+        if directive:
+            # Solo le prime 3 righe della direttiva
+            lines = [l for l in directive.strip().split("\n") if l.strip()][:3]
+            directive_hint = "Suggerimento: " + " ".join(lines) + "\n"
+
+        prompt = (
+            f'Estrai il campo "{field}" da questo testo di un disciplinare di gara.\n'
+            f'{directive_hint}'
+            f'---\n{section}\n---\n'
+            f'Rispondi SOLO in JSON: '
+            f'{{"value": "...", "confidence": 0.0-1.0, "motivazione": "..."}}\n'
+            f'Se il campo non è presente, usa {{"value": null, "confidence": 0, '
+            f'"motivazione": "non trovato"}}'
         )
-
-        messages = [{"role": "user", "content": user_prompt}]
-
-        for step in range(MAX_AGENT_STEPS):
-            response = self.llm.chat(
-                [{"role": "system", "content": self.system_prompt}] + messages,
-                temperature=0.1,
-                max_tokens=2048,
-            )
-            if not response:
-                break
-
-            messages.append({"role": "assistant", "content": response})
-            parsed = self._parse_response(response)
-
-            if parsed["type"] == "answer":
-                return parsed.get("data")
-
-            if parsed["type"] == "tool_call":
-                tool_name = parsed["tool"]
-                tool_args = parsed["args"]
-                if "testo" in tool_args and tool_args["testo"] == "DOCUMENTO":
-                    tool_args["testo"] = text
-                tool_result = execute_tool(tool_name, tool_args)
-                messages.append({
-                    "role": "user",
-                    "content": f"Risultato di {tool_name}:\n{tool_result}",
-                })
-                continue
-
-            # Forza risposta se sta per esaurire i passi
-            if step >= MAX_AGENT_STEPS - 2:
-                messages.append({
-                    "role": "user",
-                    "content": (
-                        "Dai la tua RISPOSTA finale adesso. Formato: "
-                        'RISPOSTA: {"value": ..., "confidence": ..., "motivazione": ...}'
-                    ),
-                })
-
-        return None
+        system = (
+            "Sei un estrattore di dati da disciplinari di gara italiani. "
+            "Rispondi SOLO in JSON. Non inventare dati."
+        )
+        return self.llm.generate_json(prompt, system=system)
 
     @staticmethod
     def _parse_response(text: str) -> dict:
-        """Parse della risposta dell'agente (PENSIERO/AZIONE/RISPOSTA)."""
-        # Cerca RISPOSTA finale
-        resp_match = re.search(r"RISPOSTA\s*:\s*(\{.*?\})", text, re.DOTALL)
-        if resp_match:
-            try:
-                return {"type": "answer", "data": json.loads(resp_match.group(1))}
-            except json.JSONDecodeError:
-                pass
-
-        # Cerca AZIONE + ARGOMENTI
-        action_match = re.search(r"AZIONE\s*:\s*(\w+)", text)
-        if action_match:
-            tool_name = action_match.group(1)
-            args_match = re.search(r"ARGOMENTI\s*:\s*(\{.*?\})", text, re.DOTALL)
-            tool_args = {}
-            if args_match:
-                try:
-                    tool_args = json.loads(args_match.group(1))
-                except json.JSONDecodeError:
-                    pass
-            return {"type": "tool_call", "tool": tool_name, "args": tool_args}
-
-        # Prova JSON diretto con "value"
-        json_match = re.search(r'\{[^{}]*"value"\s*:', text)
-        if json_match:
-            start = json_match.start()
-            depth = 0
-            for i in range(start, len(text)):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                if depth == 0:
-                    try:
-                        return {"type": "answer", "data": json.loads(text[start : i + 1])}
-                    except json.JSONDecodeError:
-                        break
-
-        return {"type": "unknown", "raw": text}
+        """Parse JSON da risposta LLM — usato da analyze_error."""
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            json_match = re.search(r'\{[^{}]*"value"\s*:', text)
+            if json_match:
+                start = json_match.start()
+                depth = 0
+                for i in range(start, len(text)):
+                    if text[i] == "{":
+                        depth += 1
+                    elif text[i] == "}":
+                        depth -= 1
+                    if depth == 0:
+                        try:
+                            return json.loads(text[start : i + 1])
+                        except json.JSONDecodeError:
+                            break
+            return {}
 
 
 # ── Utility per dict annidati ─────────────────────────────────────
@@ -310,3 +268,35 @@ def _set_nested(d: dict, path: str, value):
             cur[k] = {}
         cur = cur[k]
     cur[keys[-1]] = value
+
+
+# ── Ricerca sezione per campo ─────────────────────────────────────
+
+_FIELD_KEYWORDS: dict[str, list[str]] = {
+    "oggetto_appalto": ["oggetto", "affidamento", "appalto"],
+    "stazione_appaltante": ["stazione appaltante", "ente appaltante", "committente"],
+    "responsabile_procedimento": ["rup", "responsabile unico", "responsabile del procedimento"],
+    "cig": ["cig", "codice identificativo gara"],
+    "cup": ["cup", "codice unico progetto"],
+    "cpv": ["cpv", "vocabolario comune"],
+    "importo_base_asta": ["importo a base", "base d'asta", "importo complessivo"],
+    "oneri_sicurezza": ["oneri per la sicurezza", "oneri sicurezza"],
+    "tipo_procedura": ["tipo di procedura", "procedura aperta", "procedura negoziata"],
+    "criterio_aggiudicazione": ["criterio di aggiudicazione", "oepv", "minor prezzo"],
+    "durata_contratto": ["durata del contratto", "termine di esecuzione", "durata dell"],
+    "garanzia_provvisoria": ["garanzia provvisoria", "cauzione provvisoria"],
+    "subappalto": ["subappalto", "subappaltare"],
+    "sopralluogo": ["sopralluogo"],
+}
+
+
+def _find_section_for_field(field: str, text: str, window: int = 2000) -> str | None:
+    """Trova la sezione del testo più rilevante per un campo."""
+    keywords = _FIELD_KEYWORDS.get(field, [field.replace("_", " ")])
+    text_lower = text.lower()
+    for kw in keywords:
+        idx = text_lower.find(kw.lower())
+        if idx != -1:
+            start = max(0, idx - 200)
+            return text[start : start + window]
+    return None

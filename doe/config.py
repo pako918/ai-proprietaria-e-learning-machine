@@ -10,8 +10,8 @@ LEARNED_DIR = DIRECTIVES_DIR / "learned"
 
 # ── LLM locale (Ollama) ──────────────────────────────────────────
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
-OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "120"))
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))
 
 # ── Soglie orchestratore ─────────────────────────────────────────
 REFINE_CONFIDENCE_THRESHOLD = float(
@@ -25,7 +25,7 @@ EVOLUTION_MIN_CORRECTIONS = int(
     os.getenv("DOE_EVOLUTION_MIN_CORRECTIONS", "3")
 )
 
-# Campi troppo strutturati per un LLM 7B — restano solo deterministici
+# Campi troppo strutturati per LLM — restano solo deterministici
 SKIP_LLM_FIELDS = frozenset({
     "lotti", "criteri_valutazione", "sub_criteri",
     "categorie_professionisti", "criteri_tecnici",
