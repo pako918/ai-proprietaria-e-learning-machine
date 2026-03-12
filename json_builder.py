@@ -514,16 +514,17 @@ def build_output(nested: dict) -> dict:
     pol_raw = gar.get("polizza_RC_professionale", {})
 
     gar_prov = None
-    if isinstance(gp_raw, dict) and (gp_raw.get("dovuta") or gp_raw.get("percentuale") or gp_raw.get("importo")):
+    if isinstance(gp_raw, dict) and any(k in gp_raw for k in ("dovuta", "percentuale", "importo")):
         gar_prov = GaranziaProvvisoria(
             richiesta=gp_raw.get("dovuta", False),
             percentuale=_parse_float(gp_raw.get("percentuale")),
             importo=_parse_float(gp_raw.get("importo")),
+            note=gp_raw.get("nota"),
         )
 
     # ── Garanzia definitiva ──
     gar_def = None
-    if isinstance(gd_raw, dict) and (gd_raw.get("dovuta") or gd_raw.get("percentuale")):
+    if isinstance(gd_raw, dict) and any(k in gd_raw for k in ("dovuta", "percentuale")):
         gar_def = GaranziaDefinitiva(
             richiesta=gd_raw.get("dovuta", False),
             percentuale=_parse_float(gd_raw.get("percentuale")),
@@ -588,7 +589,11 @@ def build_output(nested: dict) -> dict:
     # Aggiudicazione
     stip_contr = agg.get("stipula_contratto", {})
     if isinstance(stip_contr, dict) and stip_contr.get("forma"):
-        note_list.append(f"Stipula: {stip_contr['forma'].replace('_', ' ')}")
+        dettaglio = stip_contr.get("dettaglio")
+        if dettaglio:
+            note_list.append(f"Stipula: {dettaglio}")
+        else:
+            note_list.append(f"Stipula: {stip_contr['forma'].replace('_', ' ')}")
     # Finanziamento
     fin = ig.get("finanziamento", {})
     if isinstance(fin, dict) and fin.get("fonte"):

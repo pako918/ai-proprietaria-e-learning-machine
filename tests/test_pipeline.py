@@ -4,7 +4,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
-from pipeline import compute_hash, RulesExtractor
+from pipeline import compute_hash
+from rules_extractor import RulesExtractor
 
 
 class TestComputeHash:

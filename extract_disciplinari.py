@@ -306,10 +306,31 @@ def _section_text(full_text: str, start_patterns: list[str], end_patterns: list[
     return full_text[start_idx : min(start_idx + max_len, end_idx)]
 
 
+# Mappa caratteri PDF codificati male (cp850/cp1252 letti come latin-1)
+_PDF_CHAR_MAP = {
+    "\u00fb": "–",   # û → en-dash
+    "\u00da": "è",   # Ú → è
+    "\u00c7": "€",   # Ç → €
+    "\u00c6": "'",   # Æ → apostrofo
+    "\u00de": "è",   # Þ → è
+    "\u00c0": "À",   # └ → À (spesso già ok)
+    "\u00d3": "à",   # Ó → à
+    "\u2514": "À",   # └ box-drawing → À
+}
+
+def _fix_pdf_encoding(s: str) -> str:
+    """Corregge artefatti di codifica comuni nei PDF italiani."""
+    for old, new in _PDF_CHAR_MAP.items():
+        s = s.replace(old, new)
+    return s
+
+
 def _clean(s: str | None) -> str | None:
-    """Pulisce spazi multipli e newline da una stringa."""
+    """Pulisce spazi multipli, newline e artefatti di codifica PDF."""
     if not s:
         return None
+    s = _fix_pdf_encoding(s)
+    s = re.sub(r'\*{2,}', '', s)           # rimuovi bold markers **
     s = re.sub(r"\s+", " ", s).strip()
     return s if s else None
 
@@ -1391,17 +1412,31 @@ def extract_rules_based(text: str) -> dict:
             fat_glob["fatturato_globale"] = {"richiesto": True}
         fat_glob["fatturato_globale"]["periodo_riferimento"] = _clean(m_fat_per.group(1))
 
-    # Servizi analoghi
+    # Servizi analoghi / servizi di ingegneria
     srv = rp["capacita_tecnico_professionale"]
-    m_srv = re.search(
-        r"servizi\s+(?:analoghi|di\s+punta)[^.]{0,200}?((?:ultimo|ultimi)\s+\w+\s*\w*)",
+    # Primary: cerca "Aver regolarmente eseguito, nei dieci anni..." (most specific)
+    m_srv2 = re.search(
+        r"(?:Aver\s+)?regolarmente\s+eseguito[,\s]+nei\s+((?:dieci|cinque|\d+)\s+anni\s+antecedent[^,]{0,80})",
         text, re.IGNORECASE,
     )
-    if m_srv:
+    if m_srv2:
         srv["servizi_analoghi"] = {
             "richiesti": True,
-            "periodo_riferimento": _clean(m_srv.group(1)),
+            "periodo_riferimento": _clean(m_srv2.group(1)),
         }
+    # Fallback: cerca "servizi analoghi/di punta" + periodo (less specific)
+    if not srv.get("servizi_analoghi"):
+        m_srv = re.search(
+            r"(?:servizi\s+(?:analoghi|di\s+punta)|"
+            r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+ingegneria\s+e\s+(?:di\s+)?architettura)"
+            r"[^.]{0,200}?((?:ultimo|ultimi|dieci|cinque)\s+\w+\s*\w*(?:\s+anni?\s*\w*)?)",
+            text, re.IGNORECASE,
+        )
+        if m_srv:
+            srv["servizi_analoghi"] = {
+                "richiesti": True,
+                "periodo_riferimento": _clean(m_srv.group(1)),
+            }
 
     # Requisiti categorie per servizi analoghi
     cat_req = re.findall(
@@ -1501,6 +1536,84 @@ def extract_rules_based(text: str) -> dict:
                 srv["servizi_analoghi"] = {"richiesti": True}
             srv["servizi_analoghi"]["categorie_richieste"] = chosen
 
+    # Fallback 2: Parse bold-line format (non-pipe tables) for CATEGORIA D'OPERA
+    # Handles PDFs where categories appear as:
+    #   **EDILIZIA – Interventi di manutenzione... **
+    #   **E.20 **
+    #   0,95
+    #   4.120.500,00 €
+    # This format is common in disciplinari with bold-formatted tables
+    if not srv.get("servizi_analoghi", {}).get("categorie_richieste"):
+        # Find sections that contain CATEGORIA D'OPERA followed by bold category lines
+        _bold_cats = []
+        # Locate the "Importo complessivo dei lavori progettati" table
+        # (this is the servizi di punta requirements table)
+        bold_section_match = re.search(
+            r"(?:Importo\s+complessivo\s+dei\s+lavori\s+progettati|"
+            r"max\s+di\s+n\.\s*\d+\s+servizi|"
+            r"REQUISITI\s+DI\s+CAPACIT[^\n]*TECNICA)",
+            text, re.IGNORECASE,
+        )
+        if bold_section_match:
+            # Scan from this point for bold category codes
+            scan_start = bold_section_match.start()
+            scan_text = text[scan_start:scan_start + 5000]
+
+            # Match pattern: description line(s), then **CODE **, then optional number, then amount
+            acc_desc = ""
+            scan_lines = scan_text.split("\n")
+            for line_idx, line in enumerate(scan_lines):
+                stripped = line.strip()
+                cleaned = re.sub(r'\*+', '', stripped).strip()
+
+                # Is this a category code line? (bold or plain: E.20, IA.01, etc.)
+                code_m = re.match(r'^[*\s]*((?:E|S|IA|D|V)\.?\d{2})\s*\**\s*$', stripped)
+                if code_m:
+                    code_raw = code_m.group(1)
+                    code_norm = code_raw if "." in code_raw else code_raw[:-2] + "." + code_raw[-2:]
+                    # Look ahead for amount in the next few lines after the code
+                    imp_val = None
+                    grado_val = None
+                    for la_line in scan_lines[line_idx + 1:line_idx + 5]:
+                        la_clean = la_line.strip().replace("**", "").strip()
+                        if not la_clean:
+                            continue
+                        if "TOTALE" in la_clean.upper():
+                            break
+                        # Try to parse as euro amount
+                        v = _parse_euro(la_clean.replace("Ç", "€"))
+                        if v and v > 100:
+                            imp_val = v
+                            break
+                        elif v and 0 < v < 10:
+                            grado_val = v
+                    entry = {"categoria": code_norm}
+                    if acc_desc:
+                        entry["descrizione"] = _clean(acc_desc)[:200]
+                    if imp_val:
+                        entry["importo_minimo"] = imp_val
+                    if grado_val:
+                        entry["grado_complessita"] = grado_val
+                    if not any(c.get("categoria") == code_norm for c in _bold_cats):
+                        _bold_cats.append(entry)
+                    acc_desc = ""
+                elif cleaned and len(cleaned) > 5 and not re.match(r'^[\d.,€Ç\s]+$', cleaned):
+                    # Description line (e.g. "EDILIZIA – Interventi di manutenzione...")
+                    if "TOTALE" in cleaned.upper() or "CATEGORIA" in cleaned.upper():
+                        acc_desc = ""
+                    elif re.match(
+                        r"(?:EDILIZIA|IMPIANTI|STRUTTUR|IDRAULIC|VIABILIT|INFRASTRUTTUR)",
+                        cleaned, re.IGNORECASE,
+                    ):
+                        acc_desc = cleaned
+                    elif acc_desc:
+                        acc_desc = (acc_desc + " " + cleaned).strip()
+
+        if _bold_cats:
+            if "servizi_analoghi" not in srv:
+                srv["servizi_analoghi"] = {"richiesti": True}
+            srv["servizi_analoghi"]["categorie_richieste"] = _bold_cats
+
     # Arricchisci servizi_analoghi con numero, periodo, tipologia
     sa = srv.get("servizi_analoghi", {})
     if sa.get("richiesti") and sa.get("categorie_richieste"):
@@ -1528,11 +1641,28 @@ def extract_rules_based(text: str) -> dict:
         # Cerca tipologia servizi
         if not sa.get("tipologia"):
             m_tip = re.search(
-                r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+([^,]{5,80}?)(?:\s*,\s*relativ|\s*\.)",
+                r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+([^,]{5,80}?)(?:\s*[*]*\s*,\s*relativ|\s*[*]*\s*\.)",
                 text, re.IGNORECASE,
             )
             if m_tip:
-                sa["tipologia"] = _clean(m_tip.group(1))[:100]
+                sa["tipologia"] = _clean(re.sub(r'\*+', '', m_tip.group(1)))[:100]
+        # Cerca clausola "unico servizio" per singola categoria
+        if not sa.get("note"):
+            m_unico = re.search(
+                r"(?:possibil\w+\s+)?(?:dimostrare\s+il\s+possesso\s+(?:del\s+)?presente\s+requisit\w+\s+)?(?:anche\s+)?mediante\s+"
+                r"un\s+unico\s+servizio\s*[,\s]*(?:purché|a\s+condizione\s+che|purchÚ)[^.]{0,200}\.",
+                text, re.IGNORECASE,
+            )
+            if m_unico:
+                sa["note"] = _clean(m_unico.group(0))[:300]
+            else:
+                # Fallback: "in luogo dei due servizi"
+                m_unico2 = re.search(
+                    r"in\s+luogo\s+dei\s+due\s+servizi[^.]{0,300}\.",
+                    text, re.IGNORECASE,
+                )
+                if m_unico2:
+                    sa["note"] = _clean(m_unico2.group(0))[:300]
 
     # Personale tecnico medio
     m_pers = re.search(r"(?:organico|personale)\s+(?:tecnico\s+)?medio[^.]{0,100}?(\d+)\s*(?:unit[àa]|dipendent)", text, re.IGNORECASE)
@@ -2339,11 +2469,14 @@ def extract_rules_based(text: str) -> dict:
         max_len=10000,
     )
     search_text = ot_section if ot_section.strip() else text
+    # Rimuovi bold markers per facilitare matching
+    search_text_clean = re.sub(r'\*{2,}', ' ', search_text)
+    search_text_clean = re.sub(r'\s+', ' ', search_text_clean)
     # Offerta identica per entrambi i lotti
     m_identica = re.search(
-        r"(?:offerta\s+tecnica\s+deve\s+essere\s+identica\s+per\s+entrambi\s+i\s+lotti|"
-        r"identica\s+per\s+entrambi\s+i\s+lotti)[^.]*\.\s*(?:In\s+caso\s+di\s+difformit.[^.]*\.)?",
-        search_text, re.IGNORECASE | re.DOTALL,
+        r"(?:offerta\s+tecnica\s+(?:deve\s+essere\s+)?identica\s+per\s+entrambi\s+i\s+lotti|"
+        r"identica\s+per\s+entrambi\s+i\s+lotti)[^.]*\.\s*(?:In\s+caso\s+di\s+difformit(?:[^.]|\.\s*(?=\d))*\.)?",
+        search_text_clean, re.IGNORECASE | re.DOTALL,
     )
     if m_identica:
         note_ot.append(_clean(m_identica.group(0).replace("\n", " "))[:400])
@@ -2351,21 +2484,21 @@ def extract_rules_based(text: str) -> dict:
     _apo = "[\u2018\u2019']"  # apostrofo (dritto e curvo)
     m_equiv = re.search(
         r"L.Offerta\s+Tecnica\s+deve\s+rispettare\s+le\s+caratteristiche\s+minime[^.]*\.",
-        search_text, re.DOTALL,
+        search_text_clean, re.DOTALL,
     )
     if m_equiv:
         note_ot.append(_clean(m_equiv.group(0).replace("\n", " "))[:400])
     # No indicazioni economiche (a pena di esclusione)
     m_noeco = re.search(
         r"L.Offerta\s+Tecnica[^.]*?a\s+pena\s+di\s+esclusione[^.]*?economic\w+[^.]*\.",
-        search_text, re.IGNORECASE | re.DOTALL,
+        search_text_clean, re.IGNORECASE | re.DOTALL,
     )
     if m_noeco:
         note_ot.append(_clean(m_noeco.group(0).replace("\n", " "))[:400])
     # Commissione giudicatrice chiarimenti
     m_comm = re.search(
         r"[Ll]a\s+Commissione\s+giudicatrice[^.]*?chiarimenti[^.]*\.",
-        search_text, re.IGNORECASE | re.DOTALL,
+        search_text_clean, re.IGNORECASE | re.DOTALL,
     )
     if m_comm:
         note_ot.append(_clean(m_comm.group(0).replace("\n", " "))[:400])
@@ -2397,6 +2530,14 @@ def extract_rules_based(text: str) -> dict:
         ))
     if _gar_non_dovuta:
         gp["dovuta"] = False
+        # Cerca riferimento normativo per la non-richiesta
+        m_gar_ref = re.search(
+            r"(?:ai\s+sensi\s+dell.art\.?\s*\d+\s+comma\s*\d+(?:[^.]|\.\s*(?=\d)){0,60}non\s+.{0,30}richiest\w*[^.]*\.|"
+            r"non\s+.{0,15}richiest\w*.{0,60}garanzia\s+provvisoria[^.]*art\.?\s*\d+[^.]*\.)",
+            text, re.IGNORECASE,
+        )
+        if m_gar_ref:
+            gp["nota"] = _clean(m_gar_ref.group(0))[:300]
     else:
         # Pattern per percentuale garanzia: "2% dell'importo", "pari al 2%", ecc.
         gp_perc_patterns = [
@@ -2547,9 +2688,12 @@ def extract_rules_based(text: str) -> dict:
             if _parse_euro(v)
         ]
 
-    # Imposta di bollo
+    # Imposta di bollo — richiede esplicito € o 'euro' o 'pari a' prima dell'importo
     bollo = doc["imposta_bollo"]
-    m_bollo = re.search(r"(?:imposta\s+di\s+bollo|bollo)[^€\d]{0,50}?[€\s]*([\d.,]+)", text, re.IGNORECASE)
+    m_bollo = re.search(
+        r"(?:imposta\s+di\s+bollo|bollo)[^.]{0,100}?(?:€|Ç|euro|pari\s+a)\s*([\d.,]+)",
+        text, re.IGNORECASE,
+    )
     if m_bollo:
         v = _parse_euro(m_bollo.group(1))
         if v:
@@ -2606,12 +2750,30 @@ def extract_rules_based(text: str) -> dict:
         agg["numero_lotti_massimi_per_concorrente"] = 1
 
     stip = agg["stipula_contratto"]
-    if "atto pubblico" in text_lower:
-        stip["forma"] = "atto_pubblico"
-    elif "scrittura privata" in text_lower:
-        stip["forma"] = "scrittura_privata"
+    # Cerca la forma specifica di stipula del contratto
+    # Priorità: regex specifico "contratto è stipulato mediante..." > keyword generico
+    m_stip_forma = re.search(
+        r"contratto\s+(?:è|Þ|sara)\s+stipulat\w+\s+(?:mediante|in\s+forma\s+di|per)\s+([^.]{5,80})\.?",
+        text, re.IGNORECASE,
+    )
+    if m_stip_forma:
+        forma_raw = _clean(m_stip_forma.group(1)) or ""
+        if "scrittura privata" in forma_raw.lower():
+            stip["forma"] = "scrittura_privata"
+            stip["dettaglio"] = forma_raw
+        elif "atto pubblico" in forma_raw.lower():
+            stip["forma"] = "atto_pubblico"
+        elif "forma pubblica" in forma_raw.lower():
+            stip["forma"] = "forma_pubblica_amministrativa"
+        else:
+            stip["forma"] = "altro"
+            stip["dettaglio"] = forma_raw
     elif "forma pubblica amministrativa" in text_lower:
         stip["forma"] = "forma_pubblica_amministrativa"
+    elif "scrittura privata" in text_lower:
+        stip["forma"] = "scrittura_privata"
+    elif "atto pubblico" in text_lower:
+        stip["forma"] = "atto_pubblico"
 
     m_stand = re.search(r"stand\s*-?\s*still[^.]{0,50}?(\d+)\s*giorni", text, re.IGNORECASE)
     if not m_stand:
@@ -2743,13 +2905,22 @@ def extract_rules_based(text: str) -> dict:
         cont["collegio_consultivo_tecnico"] = True
 
     # Documentazione richiesta - conta documenti
-    doc_section = _section_text(text, ["DOCUMENTAZIONE AMMINISTRATIVA", "BUSTA A", "14. CONTENUTO"], ["OFFERTA TECNICA", "BUSTA B", "15."], max_len=15000)
+    doc_section = _section_text(text, [
+        "DOCUMENTAZIONE AMMINISTRATIVA", "BUSTA A",
+        "14. CONTENUTO", "19. CONTENUTO", "CONTENUTO DELLA BUSTA",
+    ], [
+        "OFFERTA TECNICA", "BUSTA B", "BUSTA TECNICA",
+        r"20\.", r"15\.",
+    ], max_len=15000)
     if doc_section:
-        # Conta items numerati
-        doc_items = re.findall(r"(?:^|\n)\s*(\d{1,2})\s*[\).\-]\s+([^\n]{10,200})", doc_section)
-        if doc_items:
-            max_n = max(int(n) for n, _ in doc_items)
-            doc["numero_documenti_richiesti"] = max_n
+        # Conta items numerati (solo fino a 15, per evitare falsi positivi)
+        doc_items = re.findall(r"(?:^|\n)\s*(\d{1,2})\s*[\.\)\-]\s+([^\n]{10,200})", doc_section)
+        # Filtra: considera solo sequenze numerate ragionevoli
+        valid_items = [(int(n), desc) for n, desc in doc_items if 1 <= int(n) <= 15]
+        if valid_items:
+            max_n = max(n for n, _ in valid_items)
+            if max_n <= 15:  # Ragionevole per documenti amministrativi
+                doc["numero_documenti_richiesti"] = max_n
 
     # ======================================================================
     # PULIZIA FINALE: rimuovi sezioni vuote
