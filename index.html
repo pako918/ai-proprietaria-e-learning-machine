@@ -535,7 +535,12 @@ const SECTIONS = [
   // ═══════ 2. STAZIONE APPALTANTE ═══════
   { title: "Stazione Appaltante", icon: "🏛", id: "stazione-appaltante", fields: [
     { key: 'stazione_appaltante.ente', label: 'Ente Appaltante', icon: '🏛', highlight: true, fullWidth: true, path: ['stazione_appaltante','ente'] },
-    { key: 'stazione_appaltante.rup.nome', label: 'RUP', icon: '👤', highlight: true, path: ['stazione_appaltante','rup','nome'] },
+    { key: 'stazione_appaltante.ente_delegante', label: 'Amm. Delegante', icon: '🏢', fullWidth: true, path: ['stazione_appaltante','ente_delegante'] },
+    { key: 'stazione_appaltante.cuc', label: 'CUC (Delegata)', icon: '🔄', fullWidth: true, path: ['stazione_appaltante','cuc'] },
+    { key: 'stazione_appaltante.rup.nome', label: 'RUP (Prog./Esec.)', icon: '👤', highlight: true, path: ['stazione_appaltante','rup','nome'] },
+    { key: 'stazione_appaltante.rup.ruolo', label: 'Ruolo RUP', icon: '📋', path: ['stazione_appaltante','rup','ruolo'] },
+    { key: 'stazione_appaltante.rup_cuc.nome', label: 'RUP CUC (Affidamento)', icon: '👤', highlight: true, path: ['stazione_appaltante','rup_cuc','nome'] },
+    { key: 'stazione_appaltante.rup_cuc.ruolo', label: 'Ruolo RUP CUC', icon: '📋', path: ['stazione_appaltante','rup_cuc','ruolo'] },
     { key: 'stazione_appaltante.sede', label: 'Sede', icon: '📍', path: ['stazione_appaltante','sede'] },
   ]},
   // ═══════ 3. LOTTI E IMPORTI ═══════

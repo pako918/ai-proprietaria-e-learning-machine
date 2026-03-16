@@ -41,12 +41,18 @@ class DescrizioneLavori(BaseModel):
 class RUP(BaseModel):
     """Responsabile Unico del Procedimento."""
     nome: Optional[str] = None
+    qualifica: Optional[str] = None  # Dott., Dott.ssa, Ing., Arch., ecc.
+    ruolo: Optional[str] = None  # es. "Programmazione/Progettazione/Esecuzione" o "Affidamento (CUC)"
+    email: Optional[str] = None
 
 
 class StazioneAppaltante(BaseModel):
     """Stazione appaltante / ente."""
     ente: Optional[str] = None
-    rup: Optional[RUP] = None
+    ente_delegante: Optional[str] = None  # ente che ha delegato la procedura (es. Comune di X)
+    cuc: Optional[str] = None  # Centrale Unica di Committenza (stazione appaltante delegata)
+    rup: Optional[RUP] = None  # RUP principale (fasi programmazione/progettazione/esecuzione)
+    rup_cuc: Optional[RUP] = None  # RUP designato dalla CUC per la fase di affidamento
     sede: Optional[str] = None
 
 

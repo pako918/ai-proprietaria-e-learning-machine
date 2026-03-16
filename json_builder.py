@@ -172,14 +172,24 @@ def build_output(nested: dict) -> dict:
     # ── Stazione appaltante ──
     sa_raw = ig.get("stazione_appaltante", {})
     rup_raw = ig.get("RUP", ig.get("rup", {}))
+    rup_cuc_raw = ig.get("RUP_CUC", {})
     sa = None
-    if sa_raw or rup_raw:
-        rup_obj = None
-        if isinstance(rup_raw, dict) and rup_raw.get("nome"):
-            qualifica = rup_raw.get("qualifica", "")
-            nome = rup_raw["nome"]
+    if sa_raw or rup_raw or rup_cuc_raw:
+        def _build_rup_obj(r: dict):
+            if not isinstance(r, dict) or not r.get("nome"):
+                return None
+            qualifica = r.get("qualifica", "")
+            nome = r["nome"]
             nome_completo = f"{qualifica} {nome}".strip() if qualifica else nome
-            rup_obj = RUP(nome=nome_completo)
+            return RUP(
+                nome=nome_completo,
+                qualifica=r.get("qualifica"),
+                ruolo=r.get("ruolo"),
+                email=r.get("email"),
+            )
+
+        rup_obj = _build_rup_obj(rup_raw)
+        rup_cuc_obj = _build_rup_obj(rup_cuc_raw)
 
         sede_parts = []
         for k in ["indirizzo", "sede", "citta"]:
@@ -190,7 +200,10 @@ def build_output(nested: dict) -> dict:
 
         sa = StazioneAppaltante(
             ente=sa_raw.get("denominazione"),
+            ente_delegante=sa_raw.get("ente_delegante"),
+            cuc=sa_raw.get("CUC"),
             rup=rup_obj,
+            rup_cuc=rup_cuc_obj,
             sede=sede,
         )
 

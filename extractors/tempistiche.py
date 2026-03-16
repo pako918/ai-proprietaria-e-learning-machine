@@ -14,19 +14,43 @@ def extract_tempistiche(text: str, text_lower: str) -> tuple[dict, dict | None]:
     durata_contratto = None
 
     # Scadenza offerte
+    # Pattern ordinati dal più specifico (richiedono contesto «offert») al più generico.
+    # I pattern generici (fallback) usano finditer + filtro di contesto per non
+    # catturare per errore la data del termine chiarimenti.
     scad_patterns = [
+        # "ricevimento/presentazione delle offerte...DD/MM/YYYY...ore HH:MM"
+        r"(?:ricevimento|presentazione)\s+dell\w*\s+offert\w+[\s\S]{0,300}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s*(?:alle\s+(?:ore\s+)?|ore\s+)?(\d{1,2}[:.]\d{2})",
+        # "scadenza/termine (per il/la) presentazione/ricezione/ricevimento offerte...DD/MM/YYYY ore HH:MM"
+        r"(?:scadenza|termine)\s+(?:per\s+(?:il\s+|la\s+)?)?(?:presentazione|ricezione|ricevimento)\s+(?:dell['\u2019]\s*)?offert\w+[\s\S]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
+        # "presentazione offerte...DD/MM/YYYY ore HH:MM" (senza prefisso scadenza)
+        r"presentazione\s+(?:dell['\u2019]\s*)?offert\w+[\s\S]{0,150}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
+        # "le offerte dovranno pervenire entro ... DD/MM/YYYY"
+        r"offert\w+\s+(?:dovranno|devono)\s+(?:essere\s+)?(?:presentat\w+|trasmess\w+|inviat\w+|pervenire)[\s\S]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+)?(\d{1,2}[:.]\d{2}))?",
+        # "scadenza/termine presentazione/ricezione offerte (solo data)"
+        r"(?:scadenza|termine)\s+(?:per\s+la\s+)?(?:presentazione|ricezione)\s+(?:dell['\u2019]\s*)?offert\w+[\s\S]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        # Fallback generici (filtrati per contesto)
         r"(?:entro\s+(?:e\s+non\s+oltre\s+)?(?:le\s+)?ore\s+)(\d{1,2}[:.,:]\d{2})\s+del\s+(?:giorno\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
         r"(?:entro\s+il\s+(?:giorno\s+)?)(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
-        r"(?:scadenza|termine)[^.]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
-        r"presentazione\s+(?:dell['\u2019]\s*)?offert\w+[^.]{0,150}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
-        r"(?:scadenza|termine)\s+(?:per\s+la\s+)?(?:presentazione|ricezione)\s+(?:dell['\u2019]\s*)?offert\w+[^.]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
-        r"offert\w+\s+(?:dovranno|devono)\s+(?:essere\s+)?(?:presentat\w+|trasmess\w+|inviat\w+|pervenire)[^.]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+)?(\d{1,2}[:.]\d{2}))?",
+        r"(?:scadenza|termine)[\s\S]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
         r"(?:entro\s+(?:e\s+non\s+oltre\s+)?(?:le\s+)?ore\s+)(\d{1,2}[:.,:]\d{2})\s+del\s+(\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})",
-        r"(?:scadenza|termine)[^.]{0,60}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"(?:scadenza|termine)[\s\S]{0,60}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
     ]
-    for sp in scad_patterns:
-        m_scad = re.search(sp, text, re.IGNORECASE | re.DOTALL)
-        if m_scad:
+    # I primi 5 pattern includono già «offert» nel contesto → nessun filtro necessario.
+    # I pattern dal 6° in poi (fallback) vanno controllati: si scarta qualunque match
+    # il cui keyword più recente (nell'arco di 500 caratteri precedenti) sia
+    # «chiariment» o «quesit» anziché «offert».
+    _N_SPECIFIC_SCAD = 5
+
+    def _is_chiarimenti_ctx(pos: int, window: int = 500) -> bool:
+        ctx = text[max(0, pos - window):pos]
+        last_offert = max((m.end() for m in re.finditer(r"offert\w*", ctx, re.I)), default=-1)
+        last_chiar = max((m.end() for m in re.finditer(r"chiariment\w*|quesit\w*", ctx, re.I)), default=-1)
+        return last_chiar > last_offert
+
+    for i, sp in enumerate(scad_patterns):
+        for m_scad in re.finditer(sp, text, re.IGNORECASE | re.DOTALL):
+            if i >= _N_SPECIFIC_SCAD and _is_chiarimenti_ctx(m_scad.start()):
+                continue
             groups = m_scad.groups()
             if len(groups) >= 2 and groups[1]:
                 g1, g2 = groups[0], groups[1]
@@ -36,6 +60,8 @@ def extract_tempistiche(text: str, text_lower: str) -> tuple[dict, dict | None]:
                     temp["scadenza_offerte"] = f"{g1} ore {g2}"
             else:
                 temp["scadenza_offerte"] = groups[0]
+            break
+        if "scadenza_offerte" in temp:
             break
 
     # Termine chiarimenti

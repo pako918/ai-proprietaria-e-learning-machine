@@ -91,11 +91,27 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
         elif "cuc" in den_lower or "centrale unica" in den_lower:
             sa["tipo_ente"] = "CUC"
 
-    m_cuc = re.search(r"(?:CENTRALE\s+UNICA\s+DI\s+COMMITTENZA|CUC)\s*[:\-\n]\s*(.+?)(?:\n|$)", header, re.IGNORECASE)
+    m_cuc = re.search(
+        r"(?:CENTRALE\s+UNICA\s+DI\s+COMMITTENZA|C\.?U\.?C\.?)"
+        r"(?:\s*[:\-\–]\s*|\s+(?:presso\s+(?:l['\u2019]\s*)?)?|\s+di\s+)"
+        r"([^\n]{5,120})",
+        header, re.IGNORECASE,
+    )
     if m_cuc:
         cuc_name = _clean(m_cuc.group(1))
-        if cuc_name and len(cuc_name) > 3:
+        # Evita di catturare solo acronimi (es. "CUC" ripetuto senza nome)
+        if cuc_name and len(cuc_name) > 3 and not re.fullmatch(r"C\.?U\.?C\.?", cuc_name, re.I):
             sa["CUC"] = cuc_name
+
+    # Ente delegante (Comune che delega alla CUC)
+    m_delegante = re.search(
+        r"(?:AMMINISTRAZIONE\s+DELEGANTE|ENTE\s+DELEGANTE)[:\s\n–\-]+([^\n]{5,120})",
+        header, re.IGNORECASE,
+    )
+    if m_delegante:
+        delegante = _clean(m_delegante.group(1))
+        if delegante and len(delegante) > 3:
+            sa["ente_delegante"] = delegante
 
     m_pec = re.search(r"(?:PEC|pec)\s*[:\s]+([a-zA-Z0-9_.+-]+@(?:pec\.)[a-zA-Z0-9-]+\.[a-zA-Z.]+)", text)
     if m_pec:
@@ -118,45 +134,67 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
     if sa:
         ig["stazione_appaltante"] = sa
 
-    # --- RUP ---
-    rup = {}
+    # --- RUP (singolo o doppio: programmazione+esecuzione vs affidamento CUC) ---
     _rup_false = {"responsabile", "procedimento", "progetto", "documento",
                   "informatico", "firmato", "digitale", "unico", "servizio",
-                  "direzione", "settore", "procedura", "affidamento",
+                  "direzione", "settore", "procedura",
                   "email", "pec", "tel", "telefono", "fax", "indirizzo"}
-    rup_patterns = [
+    _rup_scan_patterns = [
         r"(?:R\.?U\.?P\.?)\s*[:\s]+(?:[Rr]esponsabile[^\n]*?,\s*)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
         r"[Rr]esponsabile\s+(?:[Uu]nico\s+)?(?:del\s+)?(?:[Pp]rogetto|[Pp]rocedimento|procedimento\s+e\s+del\s+progetto)[,.\s:]+(?:(?:(?:è|e)\s+)?(?:il\s+|la\s+)?)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:[Dd]ott\.?(?:ssa)?|[Ii]ng\.?|[Aa]rch\.?|[Gg]eom\.?|[Pp]rof\.?)\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:(?:è|e)\s+)?l['']([Aa]rch|[Ii]ng|[Dd]ott)\.?\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento))[\s\S]{0,400}?(?:[Dd]ott\.?(?:ssa)?|[Ii]ng\.?|[Aa]rch\.?|[Gg]eom\.?|[Pp]rof\.?)\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento))[\s\S]{0,400}?(?:(?:è|e)\s+)?l['\u2019]([Aa]rch|[Ii]ng|[Dd]ott)\.?\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
     ]
-    for i, pat in enumerate(rup_patterns):
-        m = re.search(pat, text, re.DOTALL)
-        if m:
-            candidate = _clean(m.group(2) if i == len(rup_patterns) - 1 else m.group(1))
-            if candidate:
-                candidate = re.sub(r'\s+(?:Email|Pec|Tel|Telefono|Fax|Indirizzo|Documento|Firmato)\b.*', '', candidate)
-                candidate = _clean(candidate)
-            if candidate and not any(w in candidate.lower() for w in _rup_false):
-                rup["nome"] = candidate
-                break
+    _N_RUP_PATS = len(_rup_scan_patterns)
 
-    if rup.get("nome"):
-        rup_name = rup["nome"]
-        rup_name = re.sub(r'\s+(?:Documento|informatico|sottoscritt|digitale|firmato|Responsabile)\b.*', '', rup_name)
-        rup["nome"] = _clean(rup_name)
-        rup_area = text[max(0, text.find(rup["nome"]) - 200):text.find(rup["nome"]) + 200]
-        rup_area_lower = rup_area.lower()
+    def _rup_candidate(m, pi: int) -> str | None:
+        raw = _clean(m.group(2) if pi == _N_RUP_PATS - 1 else m.group(1))
+        if raw:
+            raw = re.sub(r'\s+(?:Email|Pec|Tel|Telefono|Fax|Indirizzo|Documento|Firmato|Responsabile)\b.*', '', raw, flags=re.I)
+            raw = re.sub(r'\s+(?:Documento|informatico|sottoscritt|digitale|firmato)\b.*', '', raw, flags=re.I)
+            raw = _clean(raw)
+        if raw and not any(w in raw.lower() for w in _rup_false):
+            return raw
+        return None
+
+    def _build_rup(name: str, match_start: int) -> dict:
+        area = text[max(0, match_start - 300): match_start + 300]
+        r: dict = {"nome": name}
         for qual in ["Dott.ssa", "Dott.", "Ing.", "Arch.", "Geom.", "Prof."]:
-            if qual.lower() in rup_area_lower:
-                rup["qualifica"] = qual.rstrip(".")
+            if qual.lower() in area.lower():
+                r["qualifica"] = qual.rstrip(".")
                 break
-        m_email_rup = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z.]+)", rup_area)
-        if m_email_rup:
-            rup["email"] = m_email_rup.group(1).lower()
+        m_mail = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z.]+)", area)
+        if m_mail:
+            r["email"] = m_mail.group(1).lower()
+        return r
 
-    if rup:
-        ig["RUP"] = rup
+    rup_main: dict = {}
+    rup_aff: dict = {}
+    _seen_rup_names: set = set()
+
+    for pi, pat in enumerate(_rup_scan_patterns):
+        for m in re.finditer(pat, text, re.DOTALL):
+            name = _rup_candidate(m, pi)
+            if not name or name in _seen_rup_names:
+                continue
+            _seen_rup_names.add(name)
+            ctx = text[max(0, m.start() - 300): m.end() + 300].lower()
+            is_affid = bool(re.search(r"affidamento|centrale\s+unica|c\.?u\.?c\b", ctx))
+            rd = _build_rup(name, m.start())
+            if is_affid and not rup_aff:
+                rd["ruolo"] = "Affidamento (CUC)"
+                rup_aff = rd
+            elif not rup_main:
+                rd["ruolo"] = "Programmazione / Progettazione / Esecuzione"
+                rup_main = rd
+        if rup_main and rup_aff:
+            break
+
+    if rup_main:
+        ig["RUP"] = rup_main
+    if rup_aff:
+        ig["RUP_CUC"] = rup_aff
 
     # --- Numero bando ---
     m_bando = re.search(r"(?:BANDO|bando|Atti di gara)\s*(?:n\.?\s*|n°\s*)?([A-Z0-9/\-]+\d{4}/?\d*)", text)
