@@ -172,14 +172,24 @@ def build_output(nested: dict) -> dict:
     # ── Stazione appaltante ──
     sa_raw = ig.get("stazione_appaltante", {})
     rup_raw = ig.get("RUP", ig.get("rup", {}))
+    rup_cuc_raw = ig.get("RUP_CUC", {})
     sa = None
-    if sa_raw or rup_raw:
-        rup_obj = None
-        if isinstance(rup_raw, dict) and rup_raw.get("nome"):
-            qualifica = rup_raw.get("qualifica", "")
-            nome = rup_raw["nome"]
+    if sa_raw or rup_raw or rup_cuc_raw:
+        def _build_rup_obj(r: dict):
+            if not isinstance(r, dict) or not r.get("nome"):
+                return None
+            qualifica = r.get("qualifica", "")
+            nome = r["nome"]
             nome_completo = f"{qualifica} {nome}".strip() if qualifica else nome
-            rup_obj = RUP(nome=nome_completo)
+            return RUP(
+                nome=nome_completo,
+                qualifica=r.get("qualifica"),
+                ruolo=r.get("ruolo"),
+                email=r.get("email"),
+            )
+
+        rup_obj = _build_rup_obj(rup_raw)
+        rup_cuc_obj = _build_rup_obj(rup_cuc_raw)
 
         sede_parts = []
         for k in ["indirizzo", "sede", "citta"]:
@@ -190,7 +200,10 @@ def build_output(nested: dict) -> dict:
 
         sa = StazioneAppaltante(
             ente=sa_raw.get("denominazione"),
+            ente_delegante=sa_raw.get("ente_delegante"),
+            cuc=sa_raw.get("CUC"),
             rup=rup_obj,
+            rup_cuc=rup_cuc_obj,
             sede=sede,
         )
 
@@ -204,10 +217,19 @@ def build_output(nested: dict) -> dict:
     for i, fig in enumerate(figure):
         if not isinstance(fig, dict):
             continue
+        det = fig.get("dettaglio", {})
         profili.append(ProfiloRichiesto(
             numero=fig.get("numero", i + 1),
             ruolo=fig.get("ruolo"),
             requisiti=fig.get("requisiti"),
+            laurea=det.get("laurea"),
+            diploma=det.get("diploma"),
+            abilitazione=det.get("abilitazione"),
+            iscrizione_albo=det.get("iscrizione_albo"),
+            anni_esperienza=det.get("anni_esperienza"),
+            esperienza_servizi=det.get("esperienza_servizi"),
+            certificazione=det.get("certificazione"),
+            riferimento_normativo=det.get("riferimento_normativo"),
         ))
 
     req_idon = None
@@ -514,16 +536,17 @@ def build_output(nested: dict) -> dict:
     pol_raw = gar.get("polizza_RC_professionale", {})
 
     gar_prov = None
-    if isinstance(gp_raw, dict) and (gp_raw.get("dovuta") or gp_raw.get("percentuale") or gp_raw.get("importo")):
+    if isinstance(gp_raw, dict) and any(k in gp_raw for k in ("dovuta", "percentuale", "importo")):
         gar_prov = GaranziaProvvisoria(
             richiesta=gp_raw.get("dovuta", False),
             percentuale=_parse_float(gp_raw.get("percentuale")),
             importo=_parse_float(gp_raw.get("importo")),
+            note=gp_raw.get("nota"),
         )
 
     # ── Garanzia definitiva ──
     gar_def = None
-    if isinstance(gd_raw, dict) and (gd_raw.get("dovuta") or gd_raw.get("percentuale")):
+    if isinstance(gd_raw, dict) and any(k in gd_raw for k in ("dovuta", "percentuale")):
         gar_def = GaranziaDefinitiva(
             richiesta=gd_raw.get("dovuta", False),
             percentuale=_parse_float(gd_raw.get("percentuale")),
@@ -588,7 +611,11 @@ def build_output(nested: dict) -> dict:
     # Aggiudicazione
     stip_contr = agg.get("stipula_contratto", {})
     if isinstance(stip_contr, dict) and stip_contr.get("forma"):
-        note_list.append(f"Stipula: {stip_contr['forma'].replace('_', ' ')}")
+        dettaglio = stip_contr.get("dettaglio")
+        if dettaglio:
+            note_list.append(f"Stipula: {dettaglio}")
+        else:
+            note_list.append(f"Stipula: {stip_contr['forma'].replace('_', ' ')}")
     # Finanziamento
     fin = ig.get("finanziamento", {})
     if isinstance(fin, dict) and fin.get("fonte"):

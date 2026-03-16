@@ -1,30 +1,25 @@
 """
-AppaltoAI - Backend FastAPI
-API REST — Pipeline 9 fasi — Training SOLO supervisionato
+AppaltoAI — Backend FastAPI
+Entry point dell'applicazione. Crea l'app e registra i router modulari.
+Il fallback HTTP (stdlib) è disponibile se FastAPI non è installato.
 """
 
 import json
 
 from config import (
     BASE_DIR, CORS_ORIGINS, SERVER_HOST, SERVER_PORT,
-    API_VERSION, APP_TITLE, MAX_UPLOAD_SIZE_BYTES, MIN_TEXT_LENGTH,
+    API_VERSION, APP_TITLE,
 )
 from log_config import setup_logging, get_logger
-from database import get_connection
-from pipeline import pipeline
-from field_registry import registry
-from schemas import full_validation
-from ml_engine import ml_engine as ml_eng
-from smart_learner import smart_learner as sl
 
 setup_logging()
 logger = get_logger("server")
 
+
 # ── Dipendenze: FastAPI o fallback HTTP ───────────────────────────────────────
 try:
-    from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+    from fastapi import FastAPI
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse, HTMLResponse
     from fastapi.staticfiles import StaticFiles
     import uvicorn
     HAS_FASTAPI = True
@@ -32,377 +27,58 @@ except ImportError:
     HAS_FASTAPI = False
 
 
-# ═════════════════════════════════════════════════════════════════════════════
-# FASTAPI APP
-# ═════════════════════════════════════════════════════════════════════════════
-
-if HAS_FASTAPI:
-    app = FastAPI(
+def create_app() -> "FastAPI":
+    """App factory: crea e configura l'applicazione FastAPI."""
+    application = FastAPI(
         title=APP_TITLE,
         description="AI proprietaria per estrazione dati da bandi di gara — Pipeline 9 fasi",
         version=API_VERSION,
     )
 
-    app.add_middleware(
+    # CORS
+    application.add_middleware(
         CORSMiddleware,
         allow_origins=CORS_ORIGINS,
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Content-Type", "Authorization"],
     )
 
+    # Static files
     if (BASE_DIR / "index.html").exists():
-        app.mount("/static", StaticFiles(directory=str(BASE_DIR), html=True), name="static")
+        application.mount("/static", StaticFiles(directory=str(BASE_DIR), html=True), name="static")
 
-    # ══════════════════════════════════════════════════════════════════════
-    # CORE ENDPOINTS
-    # ══════════════════════════════════════════════════════════════════════
+    # Registra i router modulari
+    from routers.core import router as core_router
+    from routers.extraction import router as extraction_router
+    from routers.corrections import router as corrections_router
+    from routers.training import router as training_router
+    from routers.ml_routes import router as ml_router
+    from routers.fields import router as fields_router
+    from routers.documents import router as documents_router
+    from routers.learning import router as learning_router
+    from routers.adaptive import router as adaptive_router
+    from routers.doe import router as doe_router
 
-    @app.get("/")
-    async def root():
-        index_file = BASE_DIR / "index.html"
-        if index_file.exists():
-            return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
-        return {"status": "AppaltoAI attivo", "version": API_VERSION}
+    application.include_router(core_router)
+    application.include_router(extraction_router)
+    application.include_router(corrections_router)
+    application.include_router(training_router)
+    application.include_router(ml_router)
+    application.include_router(fields_router)
+    application.include_router(documents_router)
+    application.include_router(learning_router)
+    application.include_router(adaptive_router)
+    application.include_router(doe_router)
 
-    @app.get("/api/health")
-    async def health():
-        stats = pipeline.get_stats()
-        return {
-            "status": "ok",
-            "version": API_VERSION,
-            "architecture": "ML-powered extraction pipeline",
-            "learning_mode": "data-driven supervised",
-            "ml_engine": pipeline.get_ml_status(),
-            "stats": stats,
-        }
+    return application
 
-    # ══════════════════════════════════════════════════════════════════════
-    # FASI 1-6: ESTRAZIONE
-    # ══════════════════════════════════════════════════════════════════════
 
-    @app.post("/api/extract")
-    async def extract_pdf(file: UploadFile = File(...)):
-        """Pipeline completa 9 fasi per PDF."""
-        if not file.filename or not file.filename.lower().endswith(".pdf"):
-            raise HTTPException(400, "Solo file PDF accettati")
-        content = await file.read()
-        if len(content) > MAX_UPLOAD_SIZE_BYTES:
-            raise HTTPException(400, f"File troppo grande (max {MAX_UPLOAD_SIZE_BYTES // (1024*1024)}MB)")
-        logger.info("Estrazione PDF: %s (%d bytes)", file.filename, len(content))
-        result = pipeline.process_pdf(content, file.filename)
-        if "error" in result:
-            raise HTTPException(422, result["error"])
-        return JSONResponse(content=result)
+# ═════════════════════════════════════════════════════════════════════════════
+# FASTAPI APP
+# ═════════════════════════════════════════════════════════════════════════════
 
-    @app.post("/api/extract-text")
-    async def extract_from_text(payload: dict):
-        """Pipeline per testo grezzo."""
-        text = payload.get("text", "")
-        filename = payload.get("filename", "input.txt")
-        if len(text) < MIN_TEXT_LENGTH:
-            raise HTTPException(400, "Testo troppo breve")
-        result = pipeline.process_text(text, filename)
-        return JSONResponse(content=result)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # FASE 7: CORREZIONI → DATASET PROPRIETARIO
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.post("/api/feedback")
-    async def record_feedback(payload: dict):
-        """Registra correzione utente → training sample (NO auto-training)."""
-        doc_id = payload.get("doc_id")
-        field = payload.get("field")
-        original = payload.get("original", "")
-        corrected = payload.get("corrected", "")
-        snippet = payload.get("text_snippet", "")
-        if not all([doc_id, field, corrected]):
-            raise HTTPException(400, "Parametri mancanti: doc_id, field, corrected")
-        result = pipeline.record_correction(doc_id, field, original, corrected, snippet)
-        return result
-
-    # ── Corrections CRUD ──────────────────────────────────────────────────
-
-    @app.get("/api/corrections")
-    async def get_corrections():
-        return pipeline.get_corrections()
-
-    @app.get("/api/corrections/stats")
-    async def get_corrections_stats():
-        return pipeline.get_corrections_stats()
-
-    @app.put("/api/corrections/{correction_id}")
-    async def update_correction(correction_id: int, payload: dict):
-        sample_id = payload.get("sample_id")
-        result = pipeline.update_correction(
-            correction_id=correction_id, sample_id=sample_id, data=payload
-        )
-        if result.get("status") == "error":
-            raise HTTPException(400, result["message"])
-        return result
-
-    @app.delete("/api/corrections/{correction_id}")
-    async def delete_correction(correction_id: int):
-        return pipeline.delete_correction(correction_id=correction_id)
-
-    @app.delete("/api/training-sample/{sample_id}")
-    async def delete_training_sample(sample_id: int):
-        return pipeline.delete_correction(sample_id=sample_id)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # FASE 8: RETRAINING SUPERVISIONATO (MAI AUTOMATICO)
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.post("/api/train/{field}")
-    async def train_model(field: str):
-        """Training supervisionato — attivato SOLO dall'admin."""
-        result = pipeline.train_field(field)
-        return result
-
-    @app.post("/api/models/{field}/train")
-    async def supervised_training(field: str):
-        """Alias: training supervisionato."""
-        return await train_model(field)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # FASE 9: MODEL VERSIONING + ROLLBACK
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.get("/api/models/versions")
-    async def model_versions(field: str = Query(None)):
-        return pipeline.get_model_versions(field)
-
-    @app.post("/api/models/{field}/rollback")
-    async def model_rollback(field: str):
-        result = pipeline.rollback_model(field)
-        if result.get("status") == "error":
-            raise HTTPException(400, result["message"])
-        return result
-
-    # ══════════════════════════════════════════════════════════════════════
-    # STATS, HISTORY, DOCUMENT
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.get("/api/stats")
-    async def get_stats():
-        return pipeline.get_stats()
-
-    @app.get("/api/history")
-    async def get_history():
-        return pipeline.get_history()
-
-    @app.get("/api/history/{doc_id}")
-    async def get_document(doc_id: str):
-        with get_connection(readonly=True) as conn:
-            row = conn.execute(
-                "SELECT filename, upload_date, extracted_json, corrected_json "
-                "FROM documents WHERE id=?",
-                (doc_id,)
-            ).fetchone()
-        if not row:
-            raise HTTPException(404, "Documento non trovato")
-        return {
-            "id": doc_id,
-            "filename": row[0],
-            "upload_date": row[1],
-            "extracted": json.loads(row[2]) if row[2] else {},
-            "corrected": json.loads(row[3]) if row[3] else {},
-        }
-
-    @app.get("/api/document/{doc_id}/text")
-    async def get_doc_text(doc_id: str):
-        data = pipeline.get_document_text(doc_id)
-        if not data:
-            raise HTTPException(404, "Documento non trovato")
-        return data
-
-    @app.get("/api/pdf-info/{doc_id}")
-    async def get_pdf_info(doc_id: str):
-        """Info strutturali PDF (tabelle, chunks, metadati)."""
-        for fname, parsed in pipeline._last_parsed.items():
-            return {
-                "filename": parsed.filename,
-                "is_native": parsed.is_native,
-                "total_pages": parsed.total_pages,
-                "parser_used": parsed.parser_used,
-                "metadata": parsed.metadata,
-                "warnings": parsed.warnings,
-                "tables": parsed.tables_json[:20],
-                "chunks": [
-                    {"type": c.chunk_type, "title": c.title,
-                     "pages": f"{c.page_start}-{c.page_end}",
-                     "section": c.section_path,
-                     "length": len(c.content)}
-                    for c in parsed.chunks[:50]
-                ],
-            }
-        raise HTTPException(404, "Documento non in cache")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # VALIDAZIONE
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.post("/api/validate")
-    async def validate_result(payload: dict):
-        try:
-            validation = full_validation(payload)
-            return JSONResponse(content=validation)
-        except Exception as e:
-            raise HTTPException(500, f"Errore validazione: {str(e)}")
-
-    # ══════════════════════════════════════════════════════════════════════
-    # FIELD REGISTRY — Campi custom
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.get("/api/fields")
-    async def get_fields():
-        return {
-            "sections": registry.to_sections_json(),
-            "all_keys": registry.get_keys(),
-        }
-
-    @app.get("/api/fields/custom")
-    async def get_custom_fields():
-        return [f.to_dict() for f in registry.get_custom_fields()]
-
-    @app.post("/api/fields/custom")
-    async def add_custom_field(payload: dict):
-        try:
-            fd = registry.add_custom_field(payload)
-            return {"status": "ok", "field": fd.to_dict()}
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-
-    @app.put("/api/fields/custom/{key}")
-    async def update_custom_field(key: str, payload: dict):
-        try:
-            fd = registry.update_custom_field(key, payload)
-            return {"status": "ok", "field": fd.to_dict()}
-        except ValueError as e:
-            raise HTTPException(400, str(e))
-
-    @app.delete("/api/fields/custom/{key}")
-    async def delete_custom_field(key: str):
-        ok = registry.delete_custom_field(key)
-        if not ok:
-            raise HTTPException(404, f"Campo custom '{key}' non trovato")
-        return {"status": "ok"}
-
-    # ══════════════════════════════════════════════════════════════════════
-    # ML ENGINE — Machine Learning
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.get("/api/ml/status")
-    async def ml_status():
-        """Stato del motore ML: modelli attivi, dati, configurazione."""
-        return pipeline.get_ml_status()
-
-    @app.get("/api/ml/quality")
-    async def ml_quality():
-        """Report qualità dati e modelli con raccomandazioni."""
-        return pipeline.get_ml_quality()
-
-    @app.post("/api/ml/train")
-    async def ml_train_all():
-        """Addestra tutti i modelli con dati sufficienti."""
-        return pipeline.train_all()
-
-    @app.post("/api/ml/train/{field}")
-    async def ml_train_field(field: str):
-        """Addestra il modello per un campo specifico."""
-        return pipeline.train_field(field)
-
-    @app.get("/api/ml/learning-curve/{field}")
-    async def ml_learning_curve(field: str):
-        """Curva di apprendimento: come l'accuracy migliora con più dati."""
-        return ml_eng.get_learning_curve(field)
-
-    @app.get("/api/ml/data")
-    async def ml_data_stats():
-        """Statistiche dataset di training ML."""
-        return ml_eng.data.get_data_quality()
-
-    @app.get("/api/ml/data/{field}")
-    async def ml_data_field(field: str):
-        """Statistiche dati per un campo specifico."""
-        return ml_eng.data.get_data_quality(field)
-
-    @app.post("/api/ml/rollback/{field}")
-    async def ml_rollback(field: str):
-        """Ripristina il modello precedente."""
-        result = ml_eng.rollback_field(field)
-        if result.get("status") == "error":
-            raise HTTPException(400, result["message"])
-        return result
-
-    @app.get("/api/ml/versions")
-    async def ml_model_versions(field: str = Query(None)):
-        """Storico versioni modelli ML."""
-        return ml_eng.get_model_versions(field)
-
-    # ══════════════════════════════════════════════════════════════════════
-    # PIPELINE STATUS
-    # ══════════════════════════════════════════════════════════════════════
-
-    @app.get("/api/pipeline/status")
-    async def pipeline_status():
-        stats = pipeline.get_stats()
-        versions = pipeline.get_model_versions()
-        ml_status = pipeline.get_ml_status()
-        return {
-            "pipeline_version": API_VERSION,
-            "architecture": "ML-powered extraction",
-            "learning_mode": "progressive autonomous",
-            "ml_engine": ml_status,
-            "stats": stats,
-            "models": versions,
-        }
-
-    # ══════════════════════════════════════════════════════════════════
-    # SMART LEARNER — Apprendimento progressivo autonomo
-    # ══════════════════════════════════════════════════════════════════
-
-    @app.get("/api/learning/status")
-    async def learning_status():
-        """Stato completo del sistema di apprendimento progressivo."""
-        return sl.get_full_status()
-
-    @app.get("/api/learning/patterns/{field}")
-    async def learning_patterns(field: str):
-        """Pattern strutturali appresi per un campo specifico."""
-        return sl.patterns.get_field_stats(field)
-
-    @app.get("/api/learning/evaluation")
-    async def learning_evaluation():
-        """Valutazione qualità estrazioni con trend e campi problematici."""
-        return {
-            "field_quality": sl.evaluator.evaluate_field_quality(),
-            "problematic_fields": sl.evaluator.get_problematic_fields(),
-        }
-
-    @app.get("/api/learning/auto-train")
-    async def auto_train_status():
-        """Stato dell'auto-trainer: correzioni pendenti, soglie, storico."""
-        return sl.auto_trainer.get_status()
-
-    # ── LEGACY COMPATIBILITY STUBS ────────────────────────────────────────
-    # Endpoint vecchi restituiscono risposte vuote compatibili
-
-    @app.get("/api/quarantine")
-    async def get_quarantine():
-        return []
-
-    @app.get("/api/auto-learn/stats")
-    async def auto_learn_stats():
-        return sl.auto_trainer.get_status()
-
-    @app.post("/api/quarantine/{qid}/approve")
-    async def approve_quarantine(qid: int):
-        return {"status": "deprecated", "message": "Quarantine rimossa. Usa correzioni manuali."}
-
-    @app.post("/api/quarantine/{qid}/reject")
-    async def reject_quarantine(qid: int):
-        return {"status": "deprecated", "message": "Quarantine rimossa."}
+if HAS_FASTAPI:
+    app = create_app()
 
     if __name__ == "__main__":
         logger.info("Avvio AppaltoAI su %s:%d", SERVER_HOST, SERVER_PORT)
@@ -412,6 +88,10 @@ else:
     # ── Fallback: server HTTP (stdlib) ────────────────────────────────────
     import http.server
     import socketserver
+
+    from pipeline import pipeline
+    from field_registry import registry
+    from database import get_connection
 
     class AppaltoHandler(http.server.BaseHTTPRequestHandler):
         def log_message(self, fmt, *args):
@@ -436,7 +116,7 @@ else:
         def do_GET(self):
             path = self.path.split("?")[0]
             if path == "/api/health":
-                self.send_json({"status": "ok", "version": "2.0.0", "auto_learn": False})
+                self.send_json({"status": "ok", "version": API_VERSION, "auto_learn": False})
             elif path == "/api/stats":
                 self.send_json(pipeline.get_stats())
             elif path == "/api/history":
@@ -498,7 +178,7 @@ else:
 
     def run_fallback_server(port=8000):
         with socketserver.TCPServer(("", port), AppaltoHandler) as httpd:
-            print(f"✅ AppaltoAI Server v2.0 su http://localhost:{port}")
+            print(f"✅ AppaltoAI Server v{API_VERSION} su http://localhost:{port}")
             httpd.serve_forever()
 
     if __name__ == "__main__":

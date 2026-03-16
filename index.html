@@ -143,6 +143,16 @@
   .lotti-table td, .criteri-table td { padding: 5px 8px; border-bottom: 1px solid #eee; color: var(--ink); }
   .criteri-pts { font-family: var(--font-m); font-weight: 600; color: var(--accent); }
 
+  /* Requisiti badge tags */
+  .req-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 0.75rem; line-height: 1.5; white-space: normal; }
+  .bg-info { background: #e8f4fd; color: #1565c0; }
+  .bg-warning { background: #fff8e1; color: #f57f17; }
+  .bg-primary { background: #ede7f6; color: #4527a0; }
+  .bg-success { background: #e8f5e9; color: #2e7d32; }
+  .bg-accent { background: #fce4ec; color: #c62828; }
+  .bg-muted { background: #f5f5f5; color: #616161; }
+
   /* Coherence panel */
   .coherence-banner { background: white; border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.2rem; margin-bottom: 1.2rem; }
   .coherence-title { font-family: var(--font-m); font-size: 0.68rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 0.6rem; display: flex; align-items: center; gap: 8px; }
@@ -525,7 +535,12 @@ const SECTIONS = [
   // ═══════ 2. STAZIONE APPALTANTE ═══════
   { title: "Stazione Appaltante", icon: "🏛", id: "stazione-appaltante", fields: [
     { key: 'stazione_appaltante.ente', label: 'Ente Appaltante', icon: '🏛', highlight: true, fullWidth: true, path: ['stazione_appaltante','ente'] },
-    { key: 'stazione_appaltante.rup.nome', label: 'RUP', icon: '👤', highlight: true, path: ['stazione_appaltante','rup','nome'] },
+    { key: 'stazione_appaltante.ente_delegante', label: 'Amm. Delegante', icon: '🏢', fullWidth: true, path: ['stazione_appaltante','ente_delegante'] },
+    { key: 'stazione_appaltante.cuc', label: 'CUC (Delegata)', icon: '🔄', fullWidth: true, path: ['stazione_appaltante','cuc'] },
+    { key: 'stazione_appaltante.rup.nome', label: 'RUP (Prog./Esec.)', icon: '👤', highlight: true, path: ['stazione_appaltante','rup','nome'] },
+    { key: 'stazione_appaltante.rup.ruolo', label: 'Ruolo RUP', icon: '📋', path: ['stazione_appaltante','rup','ruolo'] },
+    { key: 'stazione_appaltante.rup_cuc.nome', label: 'RUP CUC (Affidamento)', icon: '👤', highlight: true, path: ['stazione_appaltante','rup_cuc','nome'] },
+    { key: 'stazione_appaltante.rup_cuc.ruolo', label: 'Ruolo RUP CUC', icon: '📋', path: ['stazione_appaltante','rup_cuc','ruolo'] },
     { key: 'stazione_appaltante.sede', label: 'Sede', icon: '📍', path: ['stazione_appaltante','sede'] },
   ]},
   // ═══════ 3. LOTTI E IMPORTI ═══════
@@ -565,6 +580,7 @@ const SECTIONS = [
   { title: "Garanzie", icon: "🔒", id: "garanzie", fields: [
     { key: 'garanzia_provvisoria.richiesta', label: 'Provvisoria Richiesta', icon: '🔒', boolean: true, path: ['garanzia_provvisoria','richiesta'] },
     { key: 'garanzia_provvisoria.percentuale', label: 'Provvisoria %', icon: '📊', path: ['garanzia_provvisoria','percentuale'] },
+    { key: 'garanzia_provvisoria.note', label: 'Note Garanzia Provvisoria', icon: '📝', fullWidth: true, path: ['garanzia_provvisoria','note'] },
     { key: 'garanzia_definitiva.richiesta', label: 'Definitiva Richiesta', icon: '🔒', boolean: true, path: ['garanzia_definitiva','richiesta'] },
     { key: 'garanzia_definitiva.percentuale', label: 'Definitiva %', icon: '📊', path: ['garanzia_definitiva','percentuale'] },
     { key: 'polizza_RC_professionale.richiesta', label: 'Polizza RC Richiesta', icon: '🛡️', boolean: true, path: ['polizza_RC_professionale','richiesta'] },
@@ -895,22 +911,29 @@ function showResults(data, filename) {
       const rct = data.requisiti_capacita_tecnica_professionale;
       const sdp = _get(rct, 'servizi_di_punta');
       if (sdp) {
-        // Info servizi di punta
-        const infoItems = [];
-        if (sdp.numero) infoItems.push(`Numero: ${sdp.numero}`);
-        if (sdp.periodo) infoItems.push(`Periodo: ${escapeHtml(sdp.periodo)}`);
-        if (sdp.tipologia) infoItems.push(`Tipologia: ${escapeHtml(sdp.tipologia)}`);
-        if (infoItems.length > 0) {
-          const infoCard = document.createElement('div'); infoCard.className = 'result-grid';
-          infoCard.innerHTML = `<div class="result-card full-width highlight"><div class="card-top"><div class="result-label"><span class="icon">🏗</span>Servizi di Punta</div></div><div class="result-value">${infoItems.join(' · ')}</div></div>`;
-          sec.appendChild(infoCard);
-        }
-        // Tabella categorie
+        // Info servizi di punta — cards separate per ogni campo
+        const infoGrid = document.createElement('div'); infoGrid.className = 'result-grid';
+        if (sdp.numero) infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">🔢</span>N. Servizi Richiesti</div></div><div class="result-value" style="font-size:1.3rem;font-weight:700;color:var(--accent)">${sdp.numero}</div></div>`;
+        if (sdp.tipologia) infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">📋</span>Tipologia Servizi</div></div><div class="result-value">${escapeHtml(sdp.tipologia)}</div></div>`;
+        if (sdp.periodo) infoGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📅</span>Periodo di Riferimento</div></div><div class="result-value">${escapeHtml(sdp.periodo)}</div></div>`;
+        if (infoGrid.innerHTML) sec.appendChild(infoGrid);
+
+        // Tabella categorie con importi
         const cats = sdp.categorie || [];
         if (cats.length > 0) {
-          let h = `<div class="result-card full-width"><table class="lotti-table"><thead><tr><th>Codice</th><th>Descrizione</th><th>Importo Complessivo Lavori</th></tr></thead><tbody>`;
+          // Calcola totale importi per il footer
+          let totale = 0;
+          cats.forEach(c => { if (c.importo_complessivo_lavori_progettati_euro) totale += c.importo_complessivo_lavori_progettati_euro; });
+          let h = `<div class="result-card full-width" style="padding:0;overflow:hidden">`;
+          h += `<div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between"><div class="result-label" style="margin:0"><span class="icon">🏗</span>Categorie d'Opera Richieste</div>`;
+          if (totale > 0) h += `<div style="font-family:var(--font-m);font-size:0.78rem;color:var(--ink-soft)">Totale: <strong style="color:var(--ok)">${fmtEuro(totale)}</strong></div>`;
+          h += `</div>`;
+          h += `<table class="lotti-table" style="margin:0"><thead><tr><th style="width:70px">Codice</th><th>Descrizione Categoria</th><th style="width:180px;text-align:right">Importo Lavori Progettati</th></tr></thead><tbody>`;
           cats.forEach(c => {
-            h += `<tr><td style="font-family:var(--font-m);font-weight:600">${escapeHtml(c.codice||'—')}</td><td>${escapeHtml(c.descrizione||'—')}</td><td style="color:var(--ok);font-family:var(--font-m)">${c.importo_complessivo_lavori_progettati_euro!=null ? fmtEuro(c.importo_complessivo_lavori_progettati_euro) : '—'}</td></tr>`;
+            const imp = c.importo_complessivo_lavori_progettati_euro;
+            h += `<tr><td style="font-family:var(--font-m);font-weight:700;font-size:0.9rem;color:var(--accent)">${escapeHtml(c.codice||'—')}</td>`;
+            h += `<td style="font-size:0.82rem">${escapeHtml(c.descrizione||'—')}</td>`;
+            h += `<td style="text-align:right;color:var(--ok);font-family:var(--font-m);font-weight:600">${imp!=null ? fmtEuro(imp) : '—'}</td></tr>`;
           });
           h += '</tbody></table></div>';
           const catWrap = document.createElement('div'); catWrap.className = 'result-grid'; catWrap.innerHTML = h;
@@ -918,7 +941,7 @@ function showResults(data, filename) {
         }
         if (sdp.note) {
           const noteCard = document.createElement('div'); noteCard.className = 'result-grid';
-          noteCard.innerHTML = `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note</div></div><div class="result-value">${escapeHtml(sdp.note)}</div></div>`;
+          noteCard.innerHTML = `<div class="note-item" style="margin-top:4px"><span>📝</span><span>${escapeHtml(sdp.note)}</span></div>`;
           sec.appendChild(noteCard);
         }
       }
@@ -947,7 +970,20 @@ function showResults(data, filename) {
       if (profili.length > 0) {
         let h = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">👤</span>Profili Richiesti</div><table class="lotti-table"><thead><tr><th>N.</th><th>Ruolo</th><th>Requisiti</th></tr></thead><tbody>`;
         profili.forEach(p => {
-          h += `<tr><td style="font-family:var(--font-m);font-weight:600">${p.numero||1}</td><td style="font-weight:500">${escapeHtml(p.ruolo||'—')}</td><td style="font-size:0.82rem">${escapeHtml(p.requisiti||'—')}</td></tr>`;
+          // Build structured detail tags
+          const detailParts = [];
+          if (p.laurea) detailParts.push(`<span class="badge bg-info">🎓 ${escapeHtml(p.laurea)}</span>`);
+          if (p.diploma) detailParts.push(`<span class="badge bg-info">📜 ${escapeHtml(p.diploma)}</span>`);
+          if (p.abilitazione) detailParts.push(`<span class="badge bg-warning">✅ ${escapeHtml(p.abilitazione)}</span>`);
+          if (p.iscrizione_albo) detailParts.push(`<span class="badge bg-primary">📋 ${escapeHtml(p.iscrizione_albo)}</span>`);
+          if (p.anni_esperienza) detailParts.push(`<span class="badge bg-success">⏱️ ${p.anni_esperienza} anni esperienza</span>`);
+          if (p.esperienza_servizi) detailParts.push(`<span class="badge bg-success">📂 ${escapeHtml(p.esperienza_servizi)}</span>`);
+          if (p.certificazione) detailParts.push(`<span class="badge bg-accent">🏅 ${escapeHtml(p.certificazione)}</span>`);
+          if (p.riferimento_normativo) detailParts.push(`<span class="badge bg-muted">⚖️ ${escapeHtml(p.riferimento_normativo)}</span>`);
+          const reqCell = detailParts.length > 0
+            ? `<div class="req-tags">${detailParts.join(' ')}</div>`
+            : escapeHtml(p.requisiti || '—');
+          h += `<tr><td style="font-family:var(--font-m);font-weight:600">${p.numero||1}</td><td style="font-weight:500">${escapeHtml(p.ruolo||'—')}</td><td style="font-size:0.82rem">${reqCell}</td></tr>`;
         });
         h += '</tbody></table></div>';
         const figWrap = document.createElement('div'); figWrap.className = 'result-grid'; figWrap.innerHTML = h;

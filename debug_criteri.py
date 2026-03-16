@@ -1,6 +1,6 @@
 """Debug: analizza i criteri estratti per capire perché la somma è 83 invece di 80."""
 import glob
-from extract_disciplinari import extract_text_from_pdf, extract_rules_based
+from extractors import extract_text_from_pdf, extract_rules_based
 from json_builder import build_output_with_methods
 
 pdfs = glob.glob("data/uploads/*.pdf") + glob.glob("uploads/*.pdf") + glob.glob("*.pdf")

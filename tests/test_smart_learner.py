@@ -145,6 +145,10 @@ class TestAutoTrainer:
 
     def test_correction_counting(self, trainer):
         """Deve contare le correzioni per campo."""
+        # Reset contatore per isolamento test
+        from database import get_connection
+        with get_connection() as conn:
+            conn.execute("DELETE FROM correction_counter WHERE field = 'test_auto_field'")
         # Prima correzione
         result = trainer.record_correction("test_auto_field")
         assert result is None  # Non ancora alla soglia

@@ -11,15 +11,21 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia il progetto (solo i file necessari)
+# Copia il progetto
 COPY *.py ./
 COPY index.html ./
+COPY routers/ ./routers/
+COPY extractors/ ./extractors/
+COPY doe/ ./doe/
+
+# Copia e registra l'entrypoint per gestire permessi sui volumi
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 # Crea cartelle dati e utente non-root
 RUN mkdir -p data/uploads models \
     && adduser --disabled-password --gecos "" appuser \
     && chown -R appuser:appuser /app
-USER appuser
 
 # Porta esposta
 EXPOSE 8000
@@ -28,5 +34,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
-# Avvia il server
+# Entry point: sistema permessi sui volumi e poi avvia il processo come `appuser`
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "server.py"]

@@ -149,7 +149,7 @@ class TestBuildOutput:
     def test_garanzia_provvisoria_mapping(self, nested_base):
         result = build_output(nested_base)
         assert result["garanzia_provvisoria"]["richiesta"] is False
-        assert result["garanzia_provvisoria"]["garanzia_definitiva_percentuale"] == 10.0
+        assert result["garanzia_definitiva"]["percentuale"] == 10.0
 
     def test_sopralluogo_mapping(self, nested_base):
         result = build_output(nested_base)

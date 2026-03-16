@@ -306,10 +306,31 @@ def _section_text(full_text: str, start_patterns: list[str], end_patterns: list[
     return full_text[start_idx : min(start_idx + max_len, end_idx)]
 
 
+# Mappa caratteri PDF codificati male (cp850/cp1252 letti come latin-1)
+_PDF_CHAR_MAP = {
+    "\u00fb": "–",   # û → en-dash
+    "\u00da": "è",   # Ú → è
+    "\u00c7": "€",   # Ç → €
+    "\u00c6": "'",   # Æ → apostrofo
+    "\u00de": "è",   # Þ → è
+    "\u00c0": "À",   # └ → À (spesso già ok)
+    "\u00d3": "à",   # Ó → à
+    "\u2514": "À",   # └ box-drawing → À
+}
+
+def _fix_pdf_encoding(s: str) -> str:
+    """Corregge artefatti di codifica comuni nei PDF italiani."""
+    for old, new in _PDF_CHAR_MAP.items():
+        s = s.replace(old, new)
+    return s
+
+
 def _clean(s: str | None) -> str | None:
-    """Pulisce spazi multipli e newline da una stringa."""
+    """Pulisce spazi multipli, newline e artefatti di codifica PDF."""
     if not s:
         return None
+    s = _fix_pdf_encoding(s)
+    s = re.sub(r'\*{2,}', '', s)           # rimuovi bold markers **
     s = re.sub(r"\s+", " ", s).strip()
     return s if s else None
 
@@ -481,11 +502,25 @@ def extract_rules_based(text: str) -> dict:
             sa["tipo_ente"] = "CUC"
 
     # CUC (Centrale Unica di Committenza)
-    m_cuc = re.search(r"(?:CENTRALE\s+UNICA\s+DI\s+COMMITTENZA|CUC)\s*[:\-\n]\s*(.+?)(?:\n|$)", header, re.IGNORECASE)
+    m_cuc = re.search(
+        r"(?:CENTRALE\s+UNICA\s+DI\s+COMMITTENZA|C\.?U\.?C\.?)"
+        r"(?:\s*[:\-\–]\s*|\s+(?:presso\s+(?:l['\u2019]\s*)?)?|\s+di\s+)"
+        r"([^\n]{5,120})",
+        header, re.IGNORECASE,
+    )
     if m_cuc:
         cuc_name = _clean(m_cuc.group(1))
-        if cuc_name and len(cuc_name) > 3:
+        if cuc_name and len(cuc_name) > 3 and not re.fullmatch(r"C\.?U\.?C\.?", cuc_name, re.I):
             sa["CUC"] = cuc_name
+
+    m_delegante = re.search(
+        r"(?:AMMINISTRAZIONE\s+DELEGANTE|ENTE\s+DELEGANTE)[:\s\n–\-]+([^\n]{5,120})",
+        header, re.IGNORECASE,
+    )
+    if m_delegante:
+        delegante = _clean(m_delegante.group(1))
+        if delegante and len(delegante) > 3:
+            sa["ente_delegante"] = delegante
 
     # PEC
     m_pec = re.search(r"(?:PEC|pec)\s*[:\s]+([a-zA-Z0-9_.+-]+@(?:pec\.)[a-zA-Z0-9-]+\.[a-zA-Z.]+)", text)
@@ -513,52 +548,67 @@ def extract_rules_based(text: str) -> dict:
     if sa:
         ig["stazione_appaltante"] = sa
 
-    # --- RUP ---
-    rup = {}
+    # --- RUP (singolo o doppio: programmazione+esecuzione vs affidamento CUC) ---
     _rup_false = {"responsabile", "procedimento", "progetto", "documento",
                   "informatico", "firmato", "digitale", "unico", "servizio",
-                  "direzione", "settore", "procedura", "affidamento",
+                  "direzione", "settore", "procedura",
                   "email", "pec", "tel", "telefono", "fax", "indirizzo"}
-    rup_patterns = [
-        # Pattern 0: "RUP: Responsabile ..., Ing. Nome Cognome"
+    _rup_scan_patterns = [
         r"(?:R\.?U\.?P\.?)\s*[:\s]+(?:[Rr]esponsabile[^\n]*?,\s*)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
-        # Pattern 1: "Responsabile ... Procedimento, Ing. Nome Cognome"
         r"[Rr]esponsabile\s+(?:[Uu]nico\s+)?(?:del\s+)?(?:[Pp]rogetto|[Pp]rocedimento|procedimento\s+e\s+del\s+progetto)[,.\s:]+(?:(?:(?:è|e)\s+)?(?:il\s+|la\s+)?)?(?:(?:Dott\.?(?:ssa)?|Ing\.?|Arch\.?|Geom\.?|Prof\.?)\s+)?([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
-        # Pattern 2: "R.U.P. ... Ing. Nome Cognome" con testo intermedio
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:[Dd]ott\.?(?:ssa)?|[Ii]ng\.?|[Aa]rch\.?|[Gg]eom\.?|[Pp]rof\.?)\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
-        # Pattern 3: "l'arch./ing. Nome Cognome"
-        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento)).{0,300}?(?:(?:è|e)\s+)?l['’]([Aa]rch|[Ii]ng|[Dd]ott)\.?\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento))[\s\S]{0,400}?(?:[Dd]ott\.?(?:ssa)?|[Ii]ng\.?|[Aa]rch\.?|[Gg]eom\.?|[Pp]rof\.?)\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
+        r"(?:R\.?U\.?P\.?|Responsabile\s+(?:Unico\s+)?(?:del\s+)?(?:Progetto|Procedimento))[\s\S]{0,400}?(?:(?:è|e)\s+)?l[\u2019']([Aa]rch|[Ii]ng|[Dd]ott)\.?\s+([A-Z][a-zàèéìòù]+(?:[ \t]+[A-Z][a-zàèéìòù]+){1,3})",
     ]
-    for i, pat in enumerate(rup_patterns):
-        m = re.search(pat, text, re.DOTALL)
-        if m:
-            candidate = _clean(m.group(2) if i == len(rup_patterns) - 1 else m.group(1))
-            if candidate:
-                # Rimuove parole spurie in coda (Email, Tel, Pec, ecc.)
-                candidate = re.sub(r'\s+(?:Email|Pec|Tel|Telefono|Fax|Indirizzo|Documento|Firmato)\b.*', '', candidate)
-                candidate = _clean(candidate)
-            if candidate and not any(w in candidate.lower() for w in _rup_false):
-                rup["nome"] = candidate
-                break
+    _N_RUP_PATS_D = len(_rup_scan_patterns)
 
-    # Qualifica RUP
-    if rup.get("nome"):
-        # Pulisce nomi RUP: rimuove parole spurie (Documento, informatico, ecc.)
-        rup_name = rup["nome"]
-        rup_name = re.sub(r'\s+(?:Documento|informatico|sottoscritt|digitale|firmato|Responsabile)\b.*', '', rup_name)
-        rup["nome"] = _clean(rup_name)
-        rup_area = text[max(0, text.find(rup["nome"]) - 200):text.find(rup["nome"]) + 200]
-        rup_area_lower = rup_area.lower()
+    def _rup_cand_d(m, pi):
+        raw = _clean(m.group(2) if pi == _N_RUP_PATS_D - 1 else m.group(1))
+        if raw:
+            raw = re.sub(r'\s+(?:Email|Pec|Tel|Telefono|Fax|Indirizzo|Documento|Firmato|Responsabile)\b.*', '', raw, flags=re.I)
+            raw = re.sub(r'\s+(?:Documento|informatico|sottoscritt|digitale|firmato)\b.*', '', raw, flags=re.I)
+            raw = _clean(raw)
+        if raw and not any(w in raw.lower() for w in _rup_false):
+            return raw
+        return None
+
+    def _build_rup_d(name, match_start):
+        area = text[max(0, match_start - 300): match_start + 300]
+        r = {"nome": name}
         for qual in ["Dott.ssa", "Dott.", "Ing.", "Arch.", "Geom.", "Prof."]:
-            if qual.lower() in rup_area_lower:
-                rup["qualifica"] = qual.rstrip(".")
+            if qual.lower() in area.lower():
+                r["qualifica"] = qual.rstrip(".")
                 break
-        m_email_rup = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z.]+)", rup_area)
-        if m_email_rup:
-            rup["email"] = m_email_rup.group(1).lower()
+        m_mail = re.search(r"([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z.]+)", area)
+        if m_mail:
+            r["email"] = m_mail.group(1).lower()
+        return r
 
-    if rup:
-        ig["RUP"] = rup
+    rup_main_d = {}
+    rup_aff_d = {}
+    _seen_rup_d = set()
+
+    for pi, pat in enumerate(_rup_scan_patterns):
+        for m in re.finditer(pat, text, re.DOTALL):
+            name = _rup_cand_d(m, pi)
+            if not name or name in _seen_rup_d:
+                continue
+            _seen_rup_d.add(name)
+            ctx = text[max(0, m.start() - 300): m.end() + 300].lower()
+            is_affid = bool(re.search(r"affidamento|centrale\s+unica|c\.?u\.?c\b", ctx))
+            rd = _build_rup_d(name, m.start())
+            if is_affid and not rup_aff_d:
+                rd["ruolo"] = "Affidamento (CUC)"
+                rup_aff_d = rd
+            elif not rup_main_d:
+                rd["ruolo"] = "Programmazione / Progettazione / Esecuzione"
+                rup_main_d = rd
+        if rup_main_d and rup_aff_d:
+            break
+
+    if rup_main_d:
+        ig["RUP"] = rup_main_d
+    if rup_aff_d:
+        ig["RUP_CUC"] = rup_aff_d
 
     # --- Numero bando ---
     m_bando = re.search(r"(?:BANDO|bando|Atti di gara)\s*(?:n\.?\s*|n°\s*)?([A-Z0-9/\-]+\d{4}/?\d*)", text)
@@ -686,7 +736,7 @@ def extract_rules_based(text: str) -> dict:
             aq["tipo"] = "unico_operatore"
         elif "più operatori" in text_lower:
             aq["tipo"] = "piu_operatori"
-        m_dur = re.search(r"(?:accordo quadro|durata)[^.]{0,100}?(\d+)\s*mesi", text_lower)
+        m_dur = re.search(r"(?:accordo quadro|durata)[\s\S]{0,100}?(\d+)\s*mesi", text_lower)
         if m_dur:
             aq["durata_mesi"] = int(m_dur.group(1))
         tp["accordo_quadro"] = aq
@@ -738,7 +788,7 @@ def extract_rules_based(text: str) -> dict:
         pt["url"] = m_url.group(0).rstrip(".,;)")
     elif not pt.get("url"):
         # Fallback: any URL near "piattaforma" or "telematica"
-        m_url_gen = re.search(r"(?:piattaforma|telematica)[^.]{0,200}?(https?://[^\s\n]+)", text, re.IGNORECASE)
+        m_url_gen = re.search(r"(?:piattaforma|telematica)[\s\S]{0,200}?(https?://[^\s\n]+)", text, re.IGNORECASE)
         if m_url_gen:
             pt["url"] = m_url_gen.group(1).rstrip(".,;)")
 
@@ -790,7 +840,7 @@ def extract_rules_based(text: str) -> dict:
         r"(?:fissato|stabilito)\s+in\s*(?:€|Ç|Euro|euro)\s*\.?\s*([\d.,]+)",
         r"TOTALE\s*[€Ç]\s*\.?\s*([\d.,]+)",
         # Numero + "euro/EUR" dopo keywords importo (cattura retroattiva)
-        r"(?:importo\s+complessivo|importo\s+totale|base\s+di\s+gara|base\s+d['\u2019]asta)[^.]{0,100}?([\d.,]+)\s*(?:€|Euro|euro|EUR)",
+        r"(?:importo\s+complessivo|importo\s+totale|base\s+di\s+gara|base\s+d['\u2019]asta)[\s\S]{0,100}?([\d.,]+)\s*(?:€|Euro|euro|EUR)",
     ]
     for pat in imp_patterns:
         m = re.search(pat, text, re.IGNORECASE)
@@ -849,14 +899,14 @@ def extract_rules_based(text: str) -> dict:
             ic["quota_ribassabile_percentuale"] = perc
 
     # Anticipazione
-    m_ant = re.search(r"anticipazione[^.]{0,100}?(\d{1,3})\s*%", text, re.IGNORECASE)
+    m_ant = re.search(r"anticipazione[\s\S]{0,100}?(\d{1,3})\s*%", text, re.IGNORECASE)
     if m_ant:
         ic["anticipazione"] = {"prevista": True, "percentuale": int(m_ant.group(1))}
 
     # Revisione prezzi
     if "revisione" in text_lower and "prezzi" in text_lower:
         rev = {"ammessa": True}
-        m_rev_perc = re.search(r"(?:revisione[^.]{0,200}?)(\d{1,3})\s*%\s*(?:dell['\u2019])?(?:variazione|incremento)", text, re.IGNORECASE)
+        m_rev_perc = re.search(r"(?:revisione[\s\S]{0,200}?)(\d{1,3})\s*%\s*(?:dell['\u2019])?(?:variazione|incremento)", text, re.IGNORECASE)
         if not m_rev_perc:
             m_rev_perc = re.search(r"(?:soglia|superiore)\s+(?:al\s+)?(\d{1,3})\s*%", text[text_lower.find("revisione"):text_lower.find("revisione")+500], re.IGNORECASE)
         if m_rev_perc:
@@ -1181,27 +1231,43 @@ def extract_rules_based(text: str) -> dict:
     # ======================================================================
 
     # Scadenza offerte
+    # Pattern ordinati dal più specifico (richiedono contesto «offert») al più generico.
+    # I pattern generici (fallback) usano finditer + filtro di contesto per non
+    # catturare per errore la data del termine chiarimenti.
     scad_patterns = [
-        # "entro e non oltre le ore 12,00 del giorno 22.12.2025"
-        r"(?:entro\s+(?:e\s+non\s+oltre\s+)?(?:le\s+)?ore\s+)(\d{1,2}[:.,:]\d{2})\s+del\s+(?:giorno\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
-        # "entro il giorno DD/MM/YYYY ore HH:MM"
-        r"(?:entro\s+il\s+(?:giorno\s+)?)(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
-        # "termine/scadenza...DD/MM/YYYY ore HH:MM"
-        r"(?:scadenza|termine)[^.]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
+        # "ricevimento/presentazione delle offerte...DD/MM/YYYY...ore HH:MM"
+        r"(?:ricevimento|presentazione)\s+dell\w*\s+offert\w+[\s\S]{0,300}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s*(?:alle\s+(?:ore\s+)?|ore\s+)?(\d{1,2}[:.]\d{2})",
+        # "scadenza/termine (per il/la) presentazione/ricezione/ricevimento offerte...DD/MM/YYYY ore HH:MM"
+        r"(?:scadenza|termine)\s+(?:per\s+(?:il\s+|la\s+)?)?(?:presentazione|ricezione|ricevimento)\s+(?:dell['\u2019]\s*)?offert\w+[\s\S]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
         # "presentazione offerte...DD/MM/YYYY ore HH:MM" (senza prefisso scadenza)
-        r"presentazione\s+(?:dell['\u2019]\s*)?offert\w+[^.]{0,150}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
-        # Standard: "scadenza/termine presentazione offerte ...data"
-        r"(?:scadenza|termine)\s+(?:per\s+la\s+)?(?:presentazione|ricezione)\s+(?:dell['\u2019]\s*)?offert\w+[^.]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"presentazione\s+(?:dell['\u2019]\s*)?offert\w+[\s\S]{0,150}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
         # "le offerte dovranno pervenire entro ... DD/MM/YYYY"
-        r"offert\w+\s+(?:dovranno|devono)\s+(?:essere\s+)?(?:presentat\w+|trasmess\w+|inviat\w+|pervenire)[^.]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+)?(\d{1,2}[:.]\d{2}))?",
-        # "ore HH:MM del DD mese YYYY" (formato data scritta italiana)
+        r"offert\w+\s+(?:dovranno|devono)\s+(?:essere\s+)?(?:presentat\w+|trasmess\w+|inviat\w+|pervenire)[\s\S]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+)?(\d{1,2}[:.]\d{2}))?",
+        # "scadenza/termine presentazione/ricezione offerte (solo data)"
+        r"(?:scadenza|termine)\s+(?:per\s+la\s+)?(?:presentazione|ricezione)\s+(?:dell['\u2019]\s*)?offert\w+[\s\S]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        # Fallback generici (filtrati per contesto)
+        r"(?:entro\s+(?:e\s+non\s+oltre\s+)?(?:le\s+)?ore\s+)(\d{1,2}[:.,:]\d{2})\s+del\s+(?:giorno\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"(?:entro\s+il\s+(?:giorno\s+)?)(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
+        r"(?:scadenza|termine)[\s\S]{0,200}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})\s+(?:ore\s+)?(\d{1,2}[:.]\d{2})",
         r"(?:entro\s+(?:e\s+non\s+oltre\s+)?(?:le\s+)?ore\s+)(\d{1,2}[:.,:]\d{2})\s+del\s+(\d{1,2}\s+(?:gennaio|febbraio|marzo|aprile|maggio|giugno|luglio|agosto|settembre|ottobre|novembre|dicembre)\s+\d{4})",
-        # Tabella/campo con solo data e ora vicino a "scadenza"  
-        r"(?:scadenza|termine)[^.]{0,60}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"(?:scadenza|termine)[\s\S]{0,60}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
     ]
-    for sp in scad_patterns:
-        m_scad = re.search(sp, text, re.IGNORECASE | re.DOTALL)
-        if m_scad:
+    # I primi 5 pattern includono già «offert» nel contesto → nessun filtro necessario.
+    # I pattern dal 6° in poi (fallback) vanno controllati: si scarta qualunque match
+    # il cui keyword più recente (nell'arco di 500 caratteri precedenti) sia
+    # «chiariment» o «quesit» anziché «offert».
+    _N_SPECIFIC_SCAD = 5
+
+    def _is_chiarimenti_ctx(pos: int, window: int = 500) -> bool:
+        ctx = text[max(0, pos - window):pos]
+        last_offert = max((m.end() for m in re.finditer(r"offert\w*", ctx, re.I)), default=-1)
+        last_chiar = max((m.end() for m in re.finditer(r"chiariment\w*|quesit\w*", ctx, re.I)), default=-1)
+        return last_chiar > last_offert
+
+    for i, sp in enumerate(scad_patterns):
+        for m_scad in re.finditer(sp, text, re.IGNORECASE | re.DOTALL):
+            if i >= _N_SPECIFIC_SCAD and _is_chiarimenti_ctx(m_scad.start()):
+                continue
             groups = m_scad.groups()
             if len(groups) >= 2 and groups[1]:
                 # Determina quale gruppo è data e quale è orario
@@ -1215,12 +1281,14 @@ def extract_rules_based(text: str) -> dict:
             else:
                 temp["scadenza_offerte"] = groups[0]
             break
+        if "scadenza_offerte" in temp:
+            break
 
     # Termine chiarimenti
     chiar_patterns = [
-        r"(?:chiariment\w+|quesit\w+)[^.]{0,200}?entro\s+(?:e\s+non\s+oltre\s+)?(?:il\s+)?(?:giorno\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
-        r"(?:termine|scadenza)\s+(?:per\s+)?(?:la\s+)?(?:presentazione\s+(?:dei\s+)?)?(?:chiariment\w+|quesit\w+)[^.]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
-        r"(?:richiesta\s+di\s+)?chiariment\w+[^.]{0,150}?(?:entro\s+il\s+)(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"(?:chiariment\w+|quesit\w+)[\s\S]{0,200}?entro\s+(?:e\s+non\s+oltre\s+)?(?:il\s+)?(?:giorno\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"(?:termine|scadenza)\s+(?:per\s+)?(?:la\s+)?(?:presentazione\s+(?:dei\s+)?)?(?:chiariment\w+|quesit\w+)[\s\S]{0,100}?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+        r"(?:richiesta\s+di\s+)?chiariment\w+[\s\S]{0,150}?(?:entro\s+il\s+)(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
     ]
     for cp in chiar_patterns:
         m_chiar = re.search(cp, text, re.IGNORECASE | re.DOTALL)
@@ -1230,7 +1298,7 @@ def extract_rules_based(text: str) -> dict:
 
     # Apertura buste / prima seduta
     m_apertura = re.search(
-        r"(?:prima\s+sedut|apertura\s+(?:delle\s+)?buste|seduta\s+pubblica)[^.]{0,200}?(?:il\s+(?:giorno\s+)?)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+|alle\s+)?(\d{1,2}[:.]\d{2}))?",
+        r"(?:prima\s+sedut|apertura\s+(?:delle\s+)?buste|seduta\s+pubblica)[\s\S]{0,200}?(?:il\s+(?:giorno\s+)?)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})(?:\s+(?:ore\s+|alle\s+)?(\d{1,2}[:.]\d{2}))?",
         text, re.IGNORECASE | re.DOTALL,
     )
     if m_apertura:
@@ -1266,13 +1334,13 @@ def extract_rules_based(text: str) -> dict:
     # Durata in giorni
     m_dur_gen = re.search(
         r"durat\w+\s+(?:complessiv\w+\s+)?(?:dell?['\u2019]\s*)?(?:contratto|appalto|servizio|incarico|lotto|procedura|prestazion\w+)"
-        r"[^.]{0,150}?(\d+)\s*(?:giorni|gg)\s+(?:naturali\s+e\s+consecutivi|natural\w+|lavora\w+|solari\w+)?",
+        r"[\s\S]{0,150}?(\d+)\s*(?:giorni|gg)\s+(?:naturali\s+e\s+consecutivi|natural\w+|lavora\w+|solari\w+)?",
         text, re.IGNORECASE,
     )
     if not m_dur_gen:
         # Fallback più ampio: "durata complessiva ... stimata in N giorni"
         m_dur_gen = re.search(
-            r"durat\w+\s+complessiv\w+[^.]{0,200}?(?:stimat\w+\s+in|pari\s+a|di)\s*(\d+)\s*(?:giorni|gg)",
+            r"durat\w+\s+complessiv\w+[\s\S]{0,200}?(?:stimat\w+\s+in|pari\s+a|di)\s*(\d+)\s*(?:giorni|gg)",
             text, re.IGNORECASE,
         )
     if m_dur_gen:
@@ -1280,18 +1348,18 @@ def extract_rules_based(text: str) -> dict:
         temp["durata_esecuzione_giorni"] = dur_c["giorni"]
 
     # Durata in mesi
-    m_dur_m = re.search(r"durat\w+\s+(?:dell?['\u2019]\s*)?(?:contratto|appalto|servizio)[^.]{0,100}?(\d+)\s*mesi", text, re.IGNORECASE)
+    m_dur_m = re.search(r"durat\w+\s+(?:dell?['\u2019]\s*)?(?:contratto|appalto|servizio)[\s\S]{0,100}?(\d+)\s*mesi", text, re.IGNORECASE)
     if m_dur_m:
         dur_c["mesi"] = int(m_dur_m.group(1))
         temp["durata_esecuzione_mesi"] = dur_c["mesi"]
 
     # Fasi lavori/gestione
-    m_fase_lav = re.search(r"(?:fase\s+(?:II|2|di\s+)?(?:realizzazione|lavori|esecuz))\w*[^.]{0,100}?(\d+)\s*(?:mesi|anni)", text, re.IGNORECASE)
+    m_fase_lav = re.search(r"(?:fase\s+(?:II|2|di\s+)?(?:realizzazione|lavori|esecuz))\w*[\s\S]{0,100}?(\d+)\s*(?:mesi|anni)", text, re.IGNORECASE)
     if m_fase_lav:
         unit = "anni" if "ann" in m_fase_lav.group(0).lower() else "mesi"
         dur_c[f"fase_realizzazione_{unit}"] = int(m_fase_lav.group(1))
 
-    m_fase_gest = re.search(r"(?:fase\s+(?:III|3|di\s+)?(?:gestion|conduzion|manuten))\w*[^.]{0,100}?(\d+)\s*(?:mesi|anni)", text, re.IGNORECASE)
+    m_fase_gest = re.search(r"(?:fase\s+(?:III|3|di\s+)?(?:gestion|conduzion|manuten))\w*[\s\S]{0,100}?(\d+)\s*(?:mesi|anni)", text, re.IGNORECASE)
     if not m_fase_gest:
         m_fase_gest = re.search(r"(?:gestion\w+\s+dell['\u2019]?\s*[Oo]pera)\s+[^\d]{0,30}?(?:concess\w+\s+)?(?:per\s+)?(\d+)\s*ann", text, re.IGNORECASE)
     if m_fase_gest:
@@ -1310,7 +1378,7 @@ def extract_rules_based(text: str) -> dict:
         )
         if m_sds_forma:
             sds["forma"] = _clean(m_sds_forma.group(1))
-        m_sds_cap = re.search(r"capitale\s+sociale\s+minimo[^.]{0,60}?([\d.,]+)\s*(?:€|euro)", text, re.IGNORECASE)
+        m_sds_cap = re.search(r"capitale\s+sociale\s+minimo[\s\S]{0,60}?([\d.,]+)\s*(?:€|euro)", text, re.IGNORECASE)
         if m_sds_cap:
             v = _parse_euro(m_sds_cap.group(1))
             if v:
@@ -1320,7 +1388,7 @@ def extract_rules_based(text: str) -> dict:
         result["durata_contratto"]["societa_di_scopo"] = sds
 
     # Termine stipula
-    m_stip = re.search(r"stipula[^.]{0,100}?(\d+)\s*giorni", text, re.IGNORECASE)
+    m_stip = re.search(r"stipula[\s\S]{0,100}?(\d+)\s*giorni", text, re.IGNORECASE)
     if m_stip:
         temp["termine_stipula_giorni"] = int(m_stip.group(1))
 
@@ -1372,8 +1440,8 @@ def extract_rules_based(text: str) -> dict:
     # Fatturato globale
     fat_glob = rp["capacita_economico_finanziaria"]
     m_fat = re.search(
-        r"fatturato\s+globale[^.]{0,200}?(?:€|Euro)\s*([\d.,]+)|"
-        r"fatturato\s+globale[^.]{0,200}?(?:pari\s+al?\s+)?(\w+\s+dell['\u2019]\s*importo)",
+        r"fatturato\s+globale[\s\S]{0,200}?(?:€|Euro)\s*([\d.,]+)|"
+        r"fatturato\s+globale[\s\S]{0,200}?(?:pari\s+al?\s+)?(\w+\s+dell['\u2019]\s*importo)",
         text, re.IGNORECASE,
     )
     if m_fat:
@@ -1385,27 +1453,41 @@ def extract_rules_based(text: str) -> dict:
         if m_fat.group(2):
             fat_glob["fatturato_globale"]["rapporto_con_importo_gara"] = _clean(m_fat.group(2))
     
-    m_fat_per = re.search(r"fatturato\s+globale[^.]{0,200}?((?:ultimo|miglio)\w*\s+\w+\s+(?:anni?|esercizi?)[^.]{0,50})", text, re.IGNORECASE)
+    m_fat_per = re.search(r"fatturato\s+globale[\s\S]{0,200}?((?:ultimo|miglio)\w*\s+\w+\s+(?:anni?|esercizi?)[^.]{0,50})", text, re.IGNORECASE)
     if m_fat_per:
         if "fatturato_globale" not in fat_glob:
             fat_glob["fatturato_globale"] = {"richiesto": True}
         fat_glob["fatturato_globale"]["periodo_riferimento"] = _clean(m_fat_per.group(1))
 
-    # Servizi analoghi
+    # Servizi analoghi / servizi di ingegneria
     srv = rp["capacita_tecnico_professionale"]
-    m_srv = re.search(
-        r"servizi\s+(?:analoghi|di\s+punta)[^.]{0,200}?((?:ultimo|ultimi)\s+\w+\s*\w*)",
+    # Primary: cerca "Aver regolarmente eseguito, nei dieci anni..." (most specific)
+    m_srv2 = re.search(
+        r"(?:Aver\s+)?regolarmente\s+eseguito[,\s]+nei\s+((?:dieci|cinque|\d+)\s+anni\s+antecedent[^,]{0,80})",
         text, re.IGNORECASE,
     )
-    if m_srv:
+    if m_srv2:
         srv["servizi_analoghi"] = {
             "richiesti": True,
-            "periodo_riferimento": _clean(m_srv.group(1)),
+            "periodo_riferimento": _clean(m_srv2.group(1)),
         }
+    # Fallback: cerca "servizi analoghi/di punta" + periodo (less specific)
+    if not srv.get("servizi_analoghi"):
+        m_srv = re.search(
+            r"(?:servizi\s+(?:analoghi|di\s+punta)|"
+            r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+ingegneria\s+e\s+(?:di\s+)?architettura)"
+            r"[\s\S]{0,200}?((?:ultimo|ultimi|dieci|cinque)\s+\w+\s*\w*(?:\s+anni?\s*\w*)?)",
+            text, re.IGNORECASE,
+        )
+        if m_srv:
+            srv["servizi_analoghi"] = {
+                "richiesti": True,
+                "periodo_riferimento": _clean(m_srv.group(1)),
+            }
 
     # Requisiti categorie per servizi analoghi
     cat_req = re.findall(
-        r"(?:categori\w+|class\w+)\s+(E\.?\d{2}|S\.?\d{2}|IA\.?\d{2}|D\.?\d{2}|V\.?\d{2})[^.]{0,100}?"
+        r"(?:categori\w+|class\w+)\s+(E\.?\d{2}|S\.?\d{2}|IA\.?\d{2}|D\.?\d{2}|V\.?\d{2})[\s\S]{0,100}?"
         r"(?:import\w+[^€\d]{0,30}[€\s]*([\d.,]+)|class\w+\s+(\w+))",
         req_section, re.IGNORECASE,
     )
@@ -1501,6 +1583,84 @@ def extract_rules_based(text: str) -> dict:
                 srv["servizi_analoghi"] = {"richiesti": True}
             srv["servizi_analoghi"]["categorie_richieste"] = chosen
 
+    # Fallback 2: Parse bold-line format (non-pipe tables) for CATEGORIA D'OPERA
+    # Handles PDFs where categories appear as:
+    #   **EDILIZIA – Interventi di manutenzione... **
+    #   **E.20 **
+    #   0,95
+    #   4.120.500,00 €
+    # This format is common in disciplinari with bold-formatted tables
+    if not srv.get("servizi_analoghi", {}).get("categorie_richieste"):
+        # Find sections that contain CATEGORIA D'OPERA followed by bold category lines
+        _bold_cats = []
+        # Locate the "Importo complessivo dei lavori progettati" table
+        # (this is the servizi di punta requirements table)
+        bold_section_match = re.search(
+            r"(?:Importo\s+complessivo\s+dei\s+lavori\s+progettati|"
+            r"max\s+di\s+n\.\s*\d+\s+servizi|"
+            r"REQUISITI\s+DI\s+CAPACIT[^\n]*TECNICA)",
+            text, re.IGNORECASE,
+        )
+        if bold_section_match:
+            # Scan from this point for bold category codes
+            scan_start = bold_section_match.start()
+            scan_text = text[scan_start:scan_start + 5000]
+
+            # Match pattern: description line(s), then **CODE **, then optional number, then amount
+            acc_desc = ""
+            scan_lines = scan_text.split("\n")
+            for line_idx, line in enumerate(scan_lines):
+                stripped = line.strip()
+                cleaned = re.sub(r'\*+', '', stripped).strip()
+
+                # Is this a category code line? (bold or plain: E.20, IA.01, etc.)
+                code_m = re.match(r'^[*\s]*((?:E|S|IA|D|V)\.?\d{2})\s*\**\s*$', stripped)
+                if code_m:
+                    code_raw = code_m.group(1)
+                    code_norm = code_raw if "." in code_raw else code_raw[:-2] + "." + code_raw[-2:]
+                    # Look ahead for amount in the next few lines after the code
+                    imp_val = None
+                    grado_val = None
+                    for la_line in scan_lines[line_idx + 1:line_idx + 5]:
+                        la_clean = la_line.strip().replace("**", "").strip()
+                        if not la_clean:
+                            continue
+                        if "TOTALE" in la_clean.upper():
+                            break
+                        # Try to parse as euro amount
+                        v = _parse_euro(la_clean.replace("Ç", "€"))
+                        if v and v > 100:
+                            imp_val = v
+                            break
+                        elif v and 0 < v < 10:
+                            grado_val = v
+                    entry = {"categoria": code_norm}
+                    if acc_desc:
+                        entry["descrizione"] = _clean(acc_desc)[:200]
+                    if imp_val:
+                        entry["importo_minimo"] = imp_val
+                    if grado_val:
+                        entry["grado_complessita"] = grado_val
+                    if not any(c.get("categoria") == code_norm for c in _bold_cats):
+                        _bold_cats.append(entry)
+                    acc_desc = ""
+                elif cleaned and len(cleaned) > 5 and not re.match(r'^[\d.,€Ç\s]+$', cleaned):
+                    # Description line (e.g. "EDILIZIA – Interventi di manutenzione...")
+                    if "TOTALE" in cleaned.upper() or "CATEGORIA" in cleaned.upper():
+                        acc_desc = ""
+                    elif re.match(
+                        r"(?:EDILIZIA|IMPIANTI|STRUTTUR|IDRAULIC|VIABILIT|INFRASTRUTTUR)",
+                        cleaned, re.IGNORECASE,
+                    ):
+                        acc_desc = cleaned
+                    elif acc_desc:
+                        acc_desc = (acc_desc + " " + cleaned).strip()
+
+        if _bold_cats:
+            if "servizi_analoghi" not in srv:
+                srv["servizi_analoghi"] = {"richiesti": True}
+            srv["servizi_analoghi"]["categorie_richieste"] = _bold_cats
+
     # Arricchisci servizi_analoghi con numero, periodo, tipologia
     sa = srv.get("servizi_analoghi", {})
     if sa.get("richiesti") and sa.get("categorie_richieste"):
@@ -1528,14 +1688,31 @@ def extract_rules_based(text: str) -> dict:
         # Cerca tipologia servizi
         if not sa.get("tipologia"):
             m_tip = re.search(
-                r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+([^,]{5,80}?)(?:\s*,\s*relativ|\s*\.)",
+                r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+([^,]{5,80}?)(?:\s*[*]*\s*,\s*relativ|\s*[*]*\s*\.)",
                 text, re.IGNORECASE,
             )
             if m_tip:
-                sa["tipologia"] = _clean(m_tip.group(1))[:100]
+                sa["tipologia"] = _clean(re.sub(r'\*+', '', m_tip.group(1)))[:100]
+        # Cerca clausola "unico servizio" per singola categoria
+        if not sa.get("note"):
+            m_unico = re.search(
+                r"(?:possibil\w+\s+)?(?:dimostrare\s+il\s+possesso\s+(?:del\s+)?presente\s+requisit\w+\s+)?(?:anche\s+)?mediante\s+"
+                r"un\s+unico\s+servizio\s*[,\s]*(?:purché|a\s+condizione\s+che|purchÚ)[^.]{0,200}\.",
+                text, re.IGNORECASE,
+            )
+            if m_unico:
+                sa["note"] = _clean(m_unico.group(0))[:300]
+            else:
+                # Fallback: "in luogo dei due servizi"
+                m_unico2 = re.search(
+                    r"in\s+luogo\s+dei\s+due\s+servizi[^.]{0,300}\.",
+                    text, re.IGNORECASE,
+                )
+                if m_unico2:
+                    sa["note"] = _clean(m_unico2.group(0))[:300]
 
     # Personale tecnico medio
-    m_pers = re.search(r"(?:organico|personale)\s+(?:tecnico\s+)?medio[^.]{0,100}?(\d+)\s*(?:unit[àa]|dipendent)", text, re.IGNORECASE)
+    m_pers = re.search(r"(?:organico|personale)\s+(?:tecnico\s+)?medio[\s\S]{0,100}?(\d+)\s*(?:unit[àa]|dipendent)", text, re.IGNORECASE)
     if m_pers:
         srv["personale_tecnico_medio"] = {
             "richiesto": True,
@@ -1826,9 +2003,9 @@ def extract_rules_based(text: str) -> dict:
 
     # Cumulabilità ruoli (stessa persona può coprire più ruoli)
     cumul_patterns = [
-        r"(?:stesso\s+soggetto|medesimo\s+professionista|stessa\s+persona)[^.]{0,100}?(?:più\s+ruoli|più\s+funzioni|più\s+incarichi|cumular)",
-        r"(?:cumulabil\w+|cumulo)[^.]{0,100}?(?:ruol\w+|incari\w+|funzion\w+|prestazion\w+)",
-        r"(?:ruol\w+|incari\w+|funzion\w+)[^.]{0,100}?(?:cumulabil\w+|cumulo|sovrappo\w+|coincider\w+)",
+        r"(?:stesso\s+soggetto|medesimo\s+professionista|stessa\s+persona)[\s\S]{0,100}?(?:più\s+ruoli|più\s+funzioni|più\s+incarichi|cumular)",
+        r"(?:cumulabil\w+|cumulo)[\s\S]{0,100}?(?:ruol\w+|incari\w+|funzion\w+|prestazion\w+)",
+        r"(?:ruol\w+|incari\w+|funzion\w+)[\s\S]{0,100}?(?:cumulabil\w+|cumulo|sovrappo\w+|coincider\w+)",
         r"(?:più\s+ruoli|più\s+funzioni)\s+(?:possono\s+)?(?:essere\s+)?(?:affidati|ricoperti|svolti)\s+(?:da|dal)\s+(?:un\s+)?(?:unico|stesso|medesimo)",
     ]
     cumul_found = False
@@ -1839,7 +2016,7 @@ def extract_rules_based(text: str) -> dict:
     # Anche il contrario: "non cumulabili"
     non_cumul = re.search(
         r"(?:non\s+(?:sono\s+)?cumulabil\w+|non\s+(?:è\s+)?(?:consentit\w+|ammess\w+)\s+il\s+cumulo|"
-        r"incompatibil\w+[^.]{0,60}?ruol\w+)",
+        r"incompatibil\w+[\s\S]{0,60}?ruol\w+)",
         text, re.IGNORECASE,
     )
     if cumul_found or non_cumul:
@@ -1847,7 +2024,7 @@ def extract_rules_based(text: str) -> dict:
 
     # Numero minimo professionisti nel GDL
     m_num_min = re.search(
-        r"(?:gruppo\s+di\s+lavoro|struttura\s+operativa)[^.]{0,200}?"
+        r"(?:gruppo\s+di\s+lavoro|struttura\s+operativa)[\s\S]{0,200}?"
         r"(?:composto\s+(?:da\s+)?(?:almeno\s+|minimo\s+)?|"
         r"almeno\s+|minimo\s+|non\s+inferiore\s+a\s+)"
         r"(\d+)\s*(?:professionisti|componenti|soggetti|unit[àa])",
@@ -2339,11 +2516,14 @@ def extract_rules_based(text: str) -> dict:
         max_len=10000,
     )
     search_text = ot_section if ot_section.strip() else text
+    # Rimuovi bold markers per facilitare matching
+    search_text_clean = re.sub(r'\*{2,}', ' ', search_text)
+    search_text_clean = re.sub(r'\s+', ' ', search_text_clean)
     # Offerta identica per entrambi i lotti
     m_identica = re.search(
-        r"(?:offerta\s+tecnica\s+deve\s+essere\s+identica\s+per\s+entrambi\s+i\s+lotti|"
-        r"identica\s+per\s+entrambi\s+i\s+lotti)[^.]*\.\s*(?:In\s+caso\s+di\s+difformit.[^.]*\.)?",
-        search_text, re.IGNORECASE | re.DOTALL,
+        r"(?:offerta\s+tecnica\s+(?:deve\s+essere\s+)?identica\s+per\s+entrambi\s+i\s+lotti|"
+        r"identica\s+per\s+entrambi\s+i\s+lotti)[^.]*\.\s*(?:In\s+caso\s+di\s+difformit(?:[^.]|\.\s*(?=\d))*\.)?",
+        search_text_clean, re.IGNORECASE | re.DOTALL,
     )
     if m_identica:
         note_ot.append(_clean(m_identica.group(0).replace("\n", " "))[:400])
@@ -2351,21 +2531,21 @@ def extract_rules_based(text: str) -> dict:
     _apo = "[\u2018\u2019']"  # apostrofo (dritto e curvo)
     m_equiv = re.search(
         r"L.Offerta\s+Tecnica\s+deve\s+rispettare\s+le\s+caratteristiche\s+minime[^.]*\.",
-        search_text, re.DOTALL,
+        search_text_clean, re.DOTALL,
     )
     if m_equiv:
         note_ot.append(_clean(m_equiv.group(0).replace("\n", " "))[:400])
     # No indicazioni economiche (a pena di esclusione)
     m_noeco = re.search(
         r"L.Offerta\s+Tecnica[^.]*?a\s+pena\s+di\s+esclusione[^.]*?economic\w+[^.]*\.",
-        search_text, re.IGNORECASE | re.DOTALL,
+        search_text_clean, re.IGNORECASE | re.DOTALL,
     )
     if m_noeco:
         note_ot.append(_clean(m_noeco.group(0).replace("\n", " "))[:400])
     # Commissione giudicatrice chiarimenti
     m_comm = re.search(
         r"[Ll]a\s+Commissione\s+giudicatrice[^.]*?chiarimenti[^.]*\.",
-        search_text, re.IGNORECASE | re.DOTALL,
+        search_text_clean, re.IGNORECASE | re.DOTALL,
     )
     if m_comm:
         note_ot.append(_clean(m_comm.group(0).replace("\n", " "))[:400])
@@ -2397,6 +2577,14 @@ def extract_rules_based(text: str) -> dict:
         ))
     if _gar_non_dovuta:
         gp["dovuta"] = False
+        # Cerca riferimento normativo per la non-richiesta
+        m_gar_ref = re.search(
+            r"(?:ai\s+sensi\s+dell.art\.?\s*\d+\s+comma\s*\d+(?:[^.]|\.\s*(?=\d)){0,60}non\s+.{0,30}richiest\w*[^.]*\.|"
+            r"non\s+.{0,15}richiest\w*.{0,60}garanzia\s+provvisoria[^.]*art\.?\s*\d+[^.]*\.)",
+            text, re.IGNORECASE,
+        )
+        if m_gar_ref:
+            gp["nota"] = _clean(m_gar_ref.group(0))[:300]
     else:
         # Pattern per percentuale garanzia: "2% dell'importo", "pari al 2%", ecc.
         gp_perc_patterns = [
@@ -2443,7 +2631,7 @@ def extract_rules_based(text: str) -> dict:
     # Polizza RC
     if "polizza" in text_lower and ("responsabilità civile" in text_lower or "rc professionale" in text_lower or "errori e omissioni" in text_lower):
         pol["richiesta"] = True
-        m_pol = re.search(r"polizza[^.]{0,200}?(?:errori\s+e\s+omissioni|responsabilità\s+civile)[^.]{0,200}", text, re.IGNORECASE)
+        m_pol = re.search(r"polizza[\s\S]{0,200}?(?:errori\s+e\s+omissioni|responsabilità\s+civile)[^.]{0,200}", text, re.IGNORECASE)
         if m_pol:
             pol["copertura"] = _clean(m_pol.group(0))[:200]
 
@@ -2492,7 +2680,7 @@ def extract_rules_based(text: str) -> dict:
 
         # Modalita sopralluogo
         m_sop_mod = re.search(
-            r"(?:sopralluogo)[^.]{0,200}?(?:da\s+effettuar\w+|si\s+svol\w+|mediante|con\s+modalit\w+)\s+([^.]{10,200})",
+            r"(?:sopralluogo)[\s\S]{0,200}?(?:da\s+effettuar\w+|si\s+svol\w+|mediante|con\s+modalit\w+)\s+([^.]{10,200})",
             sop_section, re.IGNORECASE | re.DOTALL,
         )
         if m_sop_mod:
@@ -2500,7 +2688,7 @@ def extract_rules_based(text: str) -> dict:
 
         # Contatti prenotazione
         m_sop_cont = re.search(
-            r"(?:prenotazion\w+|appuntamento|contattare|richied\w+)[^.]{0,100}?([\w.]+@[\w.]+\.\w{2,}|\d{2,4}[/-]?\d{4,})",
+            r"(?:prenotazion\w+|appuntamento|contattare|richied\w+)[\s\S]{0,100}?([\w.]+@[\w.]+\.\w{2,}|\d{2,4}[/-]?\d{4,})",
             sop_section, re.IGNORECASE,
         )
         if m_sop_cont:
@@ -2508,7 +2696,7 @@ def extract_rules_based(text: str) -> dict:
 
         # Termine sopralluogo
         m_sop_term = re.search(
-            r"sopralluogo[^.]{0,200}?entro\s+(?:il\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
+            r"sopralluogo[\s\S]{0,200}?entro\s+(?:il\s+)?(\d{1,2}[/.\-]\d{1,2}[/.\-]\d{2,4})",
             sop_section, re.IGNORECASE | re.DOTALL,
         )
         if m_sop_term:
@@ -2547,9 +2735,12 @@ def extract_rules_based(text: str) -> dict:
             if _parse_euro(v)
         ]
 
-    # Imposta di bollo
+    # Imposta di bollo — richiede esplicito € o 'euro' o 'pari a' prima dell'importo
     bollo = doc["imposta_bollo"]
-    m_bollo = re.search(r"(?:imposta\s+di\s+bollo|bollo)[^€\d]{0,50}?[€\s]*([\d.,]+)", text, re.IGNORECASE)
+    m_bollo = re.search(
+        r"(?:imposta\s+di\s+bollo|bollo)[\s\S]{0,100}?(?:€|Ç|euro|pari\s+a)\s*([\d.,]+)",
+        text, re.IGNORECASE,
+    )
     if m_bollo:
         v = _parse_euro(m_bollo.group(1))
         if v:
@@ -2606,12 +2797,30 @@ def extract_rules_based(text: str) -> dict:
         agg["numero_lotti_massimi_per_concorrente"] = 1
 
     stip = agg["stipula_contratto"]
-    if "atto pubblico" in text_lower:
-        stip["forma"] = "atto_pubblico"
-    elif "scrittura privata" in text_lower:
-        stip["forma"] = "scrittura_privata"
+    # Cerca la forma specifica di stipula del contratto
+    # Priorità: regex specifico "contratto è stipulato mediante..." > keyword generico
+    m_stip_forma = re.search(
+        r"contratto\s+(?:è|Þ|sara)\s+stipulat\w+\s+(?:mediante|in\s+forma\s+di|per)\s+([^.]{5,80})\.?",
+        text, re.IGNORECASE,
+    )
+    if m_stip_forma:
+        forma_raw = _clean(m_stip_forma.group(1)) or ""
+        if "scrittura privata" in forma_raw.lower():
+            stip["forma"] = "scrittura_privata"
+            stip["dettaglio"] = forma_raw
+        elif "atto pubblico" in forma_raw.lower():
+            stip["forma"] = "atto_pubblico"
+        elif "forma pubblica" in forma_raw.lower():
+            stip["forma"] = "forma_pubblica_amministrativa"
+        else:
+            stip["forma"] = "altro"
+            stip["dettaglio"] = forma_raw
     elif "forma pubblica amministrativa" in text_lower:
         stip["forma"] = "forma_pubblica_amministrativa"
+    elif "scrittura privata" in text_lower:
+        stip["forma"] = "scrittura_privata"
+    elif "atto pubblico" in text_lower:
+        stip["forma"] = "atto_pubblico"
 
     m_stand = re.search(r"stand\s*-?\s*still[^.]{0,50}?(\d+)\s*giorni", text, re.IGNORECASE)
     if not m_stand:
@@ -2624,11 +2833,11 @@ def extract_rules_based(text: str) -> dict:
     # ======================================================================
 
     pen = result["penali"]
-    m_pen = re.search(r"penal[ei][^.]{0,200}?(\d+(?:[.,]\d+)?)\s*%\s*(?:(?:al\s+)?giorn|per\s+ogni\s+giorn)", text, re.IGNORECASE)
+    m_pen = re.search(r"penal[ei][\s\S]{0,200}?(\d+(?:[.,]\d+)?)\s*%\s*(?:(?:al\s+)?giorn|per\s+ogni\s+giorn)", text, re.IGNORECASE)
     if m_pen:
         pen["previste"] = True
         pen["percentuale_giornaliera"] = float(m_pen.group(1).replace(",", "."))
-    m_pen_max = re.search(r"penal[ei][^.]{0,300}?(?:massim\w+|tetto|limit\w+)[^.]{0,50}?(\d+(?:[.,]\d+)?)\s*%", text, re.IGNORECASE)
+    m_pen_max = re.search(r"penal[ei][\s\S]{0,300}?(?:massim\w+|tetto|limit\w+)[^.]{0,50}?(\d+(?:[.,]\d+)?)\s*%", text, re.IGNORECASE)
     if m_pen_max:
         pen["tetto_massimo_percentuale"] = float(m_pen_max.group(1).replace(",", "."))
 
@@ -2680,7 +2889,7 @@ def extract_rules_based(text: str) -> dict:
     # ======================================================================
 
     info_agg = result["informazioni_aggiuntive"]
-    m_comm = re.search(r"commissione[^.]{0,100}?(\d+)\s*(?:membri|componenti)", text, re.IGNORECASE)
+    m_comm = re.search(r"commissione[\s\S]{0,100}?(\d+)\s*(?:membri|componenti)", text, re.IGNORECASE)
     if m_comm:
         info_agg["commissione_giudicatrice"] = {
             "prevista": True,
@@ -2743,13 +2952,22 @@ def extract_rules_based(text: str) -> dict:
         cont["collegio_consultivo_tecnico"] = True
 
     # Documentazione richiesta - conta documenti
-    doc_section = _section_text(text, ["DOCUMENTAZIONE AMMINISTRATIVA", "BUSTA A", "14. CONTENUTO"], ["OFFERTA TECNICA", "BUSTA B", "15."], max_len=15000)
+    doc_section = _section_text(text, [
+        "DOCUMENTAZIONE AMMINISTRATIVA", "BUSTA A",
+        "14. CONTENUTO", "19. CONTENUTO", "CONTENUTO DELLA BUSTA",
+    ], [
+        "OFFERTA TECNICA", "BUSTA B", "BUSTA TECNICA",
+        r"20\.", r"15\.",
+    ], max_len=15000)
     if doc_section:
-        # Conta items numerati
-        doc_items = re.findall(r"(?:^|\n)\s*(\d{1,2})\s*[\).\-]\s+([^\n]{10,200})", doc_section)
-        if doc_items:
-            max_n = max(int(n) for n, _ in doc_items)
-            doc["numero_documenti_richiesti"] = max_n
+        # Conta items numerati (solo fino a 15, per evitare falsi positivi)
+        doc_items = re.findall(r"(?:^|\n)\s*(\d{1,2})\s*[\.\)\-]\s+([^\n]{10,200})", doc_section)
+        # Filtra: considera solo sequenze numerate ragionevoli
+        valid_items = [(int(n), desc) for n, desc in doc_items if 1 <= int(n) <= 15]
+        if valid_items:
+            max_n = max(n for n, _ in valid_items)
+            if max_n <= 15:  # Ragionevole per documenti amministrativi
+                doc["numero_documenti_richiesti"] = max_n
 
     # ======================================================================
     # PULIZIA FINALE: rimuovi sezioni vuote
