@@ -22,6 +22,7 @@ from output_schema import (
     ServiziDiPunta,
     RequisitiCapacitaTecnica,
     RequisitiCapacitaEconomica,
+    RequisitiMezzi,
     Sopralluogo,
     GestorePiattaforma,
     RegolePresentazioneOfferte,
@@ -117,7 +118,7 @@ def build_output(nested: dict) -> dict:
 
         lotti_output.append(LottoImporto(
             lotto=lotto.get("numero", 1),
-            ubicazione=lotto.get("denominazione") or lotto.get("ubicazione"),
+            ubicazione=lotto.get("luogo_esecuzione") or lotto.get("ubicazione"),  # noqa: E501
             importo_euro=importo,
             quota_fissa_65_percento_euro=quota_fissa,
             quota_ribassabile_35_percento_euro=quota_rib,
@@ -233,7 +234,7 @@ def build_output(nested: dict) -> dict:
         ))
 
     req_idon = None
-    if profili:
+    if profili or rp.get("idoneita_professionale", {}).get("iscrizioni_richieste"):
         note_idon = None
         sogg = rp.get("soggetti_ammessi", {})
         if isinstance(sogg, dict) and sogg.get("obbligo_giovane_professionista"):
@@ -242,6 +243,7 @@ def build_output(nested: dict) -> dict:
             profili_richiesti=profili,
             numero_minimo_professionisti=gdl.get("numero_minimo_professionisti"),
             ruoli_cumulabili=gdl.get("ruoli_cumulabili"),
+            iscrizioni_richieste=rp.get("idoneita_professionale", {}).get("iscrizioni_richieste", []),
             note=note_idon,
         )
 
@@ -249,24 +251,44 @@ def build_output(nested: dict) -> dict:
     ctp = rp.get("capacita_tecnico_professionale", {})
     srv = ctp.get("servizi_analoghi", {})
     req_tec = None
-    if isinstance(srv, dict) and srv.get("richiesti"):
-        categorie_srv = []
-        for cat in srv.get("categorie_richieste", []):
-            if not isinstance(cat, dict):
-                continue
-            categorie_srv.append(CategoriaServizi(
-                codice=cat.get("categoria"),
-                descrizione=cat.get("descrizione"),
-                importo_complessivo_lavori_progettati_euro=_parse_float(cat.get("importo_minimo")),
-            ))
-        servizi_punta = ServiziDiPunta(
-            numero=srv.get("numero_servizi"),
-            periodo=srv.get("periodo_riferimento"),
-            tipologia=srv.get("tipologia"),
-            categorie=categorie_srv,
-            note=srv.get("note"),
+    _has_srv = isinstance(srv, dict) and srv.get("richiesti")
+    _importo_min_srv = _parse_float(srv.get("importo_minimo")) if isinstance(srv, dict) else None
+    _ccnl_val = ctp.get("ccnl") or (srv.get("ccnl") if isinstance(srv, dict) else None)
+    _mezzi_raw = ctp.get("requisiti_mezzi") or (srv.get("requisiti_mezzi") if isinstance(srv, dict) else None)
+    _req_mezzi_obj = None
+    if isinstance(_mezzi_raw, dict):
+        _req_mezzi_obj = RequisitiMezzi(
+            numero_minimo=_mezzi_raw.get("numero_minimo"),
+            attrezzature_richieste=_mezzi_raw.get("attrezzature_richieste", []),
+            note=_mezzi_raw.get("note"),
         )
-        req_tec = RequisitiCapacitaTecnica(servizi_di_punta=servizi_punta)
+    if _has_srv or _importo_min_srv or _ccnl_val or _req_mezzi_obj:
+        categorie_srv = []
+        if _has_srv:
+            for cat in srv.get("categorie_richieste", []):
+                if not isinstance(cat, dict):
+                    continue
+                categorie_srv.append(CategoriaServizi(
+                    codice=cat.get("categoria"),
+                    descrizione=cat.get("descrizione"),
+                    importo_complessivo_lavori_progettati_euro=_parse_float(cat.get("importo_minimo")),
+                ))
+        servizi_punta = None
+        if _has_srv or categorie_srv:
+            servizi_punta = ServiziDiPunta(
+                numero=srv.get("numero_servizi") if isinstance(srv, dict) else None,
+                periodo=srv.get("periodo_riferimento") if isinstance(srv, dict) else None,
+                tipologia=srv.get("tipologia") if isinstance(srv, dict) else None,
+                categorie=categorie_srv,
+                note=srv.get("note") if isinstance(srv, dict) else None,
+            )
+        req_tec = RequisitiCapacitaTecnica(
+            servizi_di_punta=servizi_punta,
+            importo_minimo_servizi_analoghi_euro=_importo_min_srv,
+            periodo_servizi_analoghi=srv.get("periodo_riferimento") if isinstance(srv, dict) else None,
+            ccnl=_ccnl_val,
+            requisiti_mezzi=_req_mezzi_obj,
+        )
 
     # ── Requisiti capacità economica ──
     cef = rp.get("capacita_economico_finanziaria", {})

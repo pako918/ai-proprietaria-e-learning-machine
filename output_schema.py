@@ -76,6 +76,7 @@ class RequisitiIdoneitaProfessionale(BaseModel):
     profili_richiesti: List[ProfiloRichiesto] = Field(default_factory=list)
     numero_minimo_professionisti: Optional[int] = None
     ruoli_cumulabili: Optional[bool] = None
+    iscrizioni_richieste: List[str] = Field(default_factory=list)
     note: Optional[str] = None
 
 
@@ -95,9 +96,20 @@ class ServiziDiPunta(BaseModel):
     note: Optional[str] = None
 
 
+class RequisitiMezzi(BaseModel):
+    """Requisiti sui mezzi/veicoli richiesti."""
+    numero_minimo: Optional[int] = None
+    attrezzature_richieste: List[str] = Field(default_factory=list)
+    note: Optional[str] = None
+
+
 class RequisitiCapacitaTecnica(BaseModel):
     """Requisiti di capacità tecnico-professionale."""
     servizi_di_punta: Optional[ServiziDiPunta] = None
+    importo_minimo_servizi_analoghi_euro: Optional[float] = None
+    periodo_servizi_analoghi: Optional[str] = None
+    ccnl: Optional[str] = None
+    requisiti_mezzi: Optional[RequisitiMezzi] = None
 
 
 class RequisitiCapacitaEconomica(BaseModel):

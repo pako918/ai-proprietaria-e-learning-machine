@@ -121,6 +121,23 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
             rev["soglia_percentuale"] = int(m_rev_perc.group(1))
         ic["revisione_prezzi"] = rev
 
+    # --- Luogo di esecuzione (a livello di documento) ---
+    luogo_esecuzione = None
+    _luogo_patterns = [
+        r"(?:luogo\s+(?:di\s+)?(?:esecuzione|svolgimento|consegna|prestazione|fornitura))[\s:–\-]*\n?\s*([^\n]{5,120})",
+        r"(?:II\.1\.4|I\.4|I\.4\))\s*[:\-]?\s*(?:luogo\s+(?:di\s+)?(?:esecuzione|svolgimento|consegna|prestazione))?[\s:]*\n?\s*([^\n]{5,120})",
+        r"(?:NUTS\s+code|codice\s+NUTS)[^\n]{0,60}\n\s*([A-Za-zÀ-ùÀ-ú][^\n]{5,100})",
+        r"(?:Comune|Città|Municipio|Provincia)\s+di\s+([A-Za-zÀ-ùÀ-ú][^\n,;.]{2,60})\s*(?:\([A-Z]{2}\))",
+    ]
+    _bad_luogo_markers = ("http", "decreto", "prot.", "pec", "@", "piattaforma", "telematic", "traspare", "acquistinrete")
+    for _lp in _luogo_patterns:
+        _m = re.search(_lp, text, re.IGNORECASE)
+        if _m:
+            _v = _clean(_m.group(1))
+            if _v and len(_v) <= 150 and not any(b in _v.lower() for b in _bad_luogo_markers):
+                luogo_esecuzione = _v
+                break
+
     # --- Dettaglio per singoli lotti ---
     for lotto_n in range(1, sl["numero_lotti"] + 1):
         lotto_data = {"numero": lotto_n}
@@ -269,6 +286,8 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
                 if m_dur:
                     lotto_data["durata_esecuzione"] = {"mesi": int(m_dur.group(1))}
 
+        if luogo_esecuzione and "luogo_esecuzione" not in lotto_data:
+            lotto_data["luogo_esecuzione"] = luogo_esecuzione
         sl["lotti"].append(lotto_data)
 
     # --- Vincoli partecipazione lotti ---
@@ -312,12 +331,16 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
             lotto["importo_soggetto_ribasso"] = ic["importo_totale_soggetto_ribasso"]
         if "denominazione" not in lotto and ig.get("titolo"):
             lotto["denominazione"] = ig["titolo"]
+        if luogo_esecuzione:
+            lotto["luogo_esecuzione"] = luogo_esecuzione
     elif sl["numero_lotti"] == 1 and not sl["lotti"]:
         lotto = {"numero": 1}
         if ic.get("importo_totale_gara"):
             lotto["importo_base_asta"] = ic["importo_totale_gara"]
         if ig.get("titolo"):
             lotto["denominazione"] = ig["titolo"]
+        if luogo_esecuzione:
+            lotto["luogo_esecuzione"] = luogo_esecuzione
         sl["lotti"].append(lotto)
 
     # --- Estrazione lotti da tabella multi-colonna (formato QTE) ---

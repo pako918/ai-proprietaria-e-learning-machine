@@ -156,6 +156,20 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
             if m_def:
                 sogg["definizione_giovane"] = _clean(m_def.group(1))
 
+    # ── Idoneità professionale (iscrizioni registro, CCIAA, ecc.) ─────────
+    idp = rp["idoneita_professionale"]
+    _iscrizioni: list[str] = []
+    if re.search(r"iscri\w+\s+(?:alla\s+)?CCIAA|camera\s+di\s+commercio|registro\s+delle\s+imprese", text, re.IGNORECASE):
+        _iscrizioni.append("Iscrizione CCIAA (Registro delle Imprese)")
+    if re.search(r"Registro\s+Elettronico\s+Nazionale|Reg\.?\s*(?:CE\s+)?1071[/\-]?2009", text, re.IGNORECASE):
+        _iscrizioni.append("Iscrizione Registro Elettronico Nazionale (Reg. CE 1071/2009)")
+    if re.search(r"alb[oi]\s+(?:degli\s+)?(?:autorizzat\w+|licenziat\w+|operatori)", text, re.IGNORECASE):
+        _m_albo = re.search(r"alb[oi]\s+(?:degli\s+)?(?:autorizzat\w+|licenziat\w+|operatori)[^.]{0,120}", text, re.IGNORECASE)
+        if _m_albo:
+            _iscrizioni.append(_clean(_m_albo.group(0))[:150])
+    if _iscrizioni:
+        idp["iscrizioni_richieste"] = _iscrizioni
+
     # ── Fatturato globale ────────────────────────────────────────────────
     fat_glob = rp["capacita_economico_finanziaria"]
     m_fat = re.search(
@@ -205,6 +219,70 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                 "richiesti": True,
                 "periodo_riferimento": _clean(m_srv.group(1)),
             }
+
+    # ── Importo minimo servizi analoghi (appalti di servizi generici/trasporto) ──
+    sa = srv.get("servizi_analoghi", {})
+    if not sa.get("importo_minimo"):
+        _sa_imp_patterns = [
+            r"servizi\s+analoghi[^.]{0,400}?importo\s+(?:complessivo\s+)?(?:complessivo\s+di\s+)?non\s+inferiore\s+a\s*[€Ç]?\s*([\d.,]+)",
+            r"capacit[aà]\s+tecnica[^.]{0,400}?(?:importo|valore)\s+(?:complessivo\s+)?non\s+inferiore\s+a\s*[€Ç]?\s*([\d.,]+)",
+            r"aver\s+(?:regolarmente\s+)?eseguito[^.]{0,400}?importo\s+(?:complessivo\s+)?(?:di\s+)?[€Ç]?\s*([\d.,]+)",
+        ]
+        for _sa_pat in _sa_imp_patterns:
+            _m_sa = re.search(_sa_pat, text, re.IGNORECASE | re.DOTALL)
+            if _m_sa:
+                _v = _parse_euro(_m_sa.group(1))
+                if _v and _v > 100:
+                    if "servizi_analoghi" not in srv:
+                        srv["servizi_analoghi"] = {"richiesti": True}
+                    srv["servizi_analoghi"]["importo_minimo"] = _v
+                    if not srv["servizi_analoghi"].get("periodo_riferimento"):
+                        _m_per = re.search(
+                            r"((?:ultimi\s+)?\w+\s+anni\s+antecedent[^.,;]{0,100})",
+                            text[:_m_sa.start() + 600], re.IGNORECASE,
+                        )
+                        if _m_per:
+                            srv["servizi_analoghi"]["periodo_riferimento"] = _clean(_m_per.group(1))[:150]
+                    break
+
+    # ── CCNL applicabile ─────────────────────────────────────────────────
+    _ccnl_m = re.search(
+        r"CCNL\s+(?:applicabile[^.]{0,60}|(?:per\s+)?[A-Za-z\s]{3,60}?)(?=[.,;]|$|\n)",
+        text, re.IGNORECASE,
+    )
+    if not _ccnl_m:
+        _ccnl_m = re.search(
+            r"contratto\s+collettivo\s+(?:nazionale\s+di\s+lavoro\s+)?([A-Za-zàèéìòù\s]{5,80}?)(?=[.,;]|\n|$)",
+            text, re.IGNORECASE,
+        )
+    if _ccnl_m:
+        _ccnl_val = _clean(_ccnl_m.group(0))[:120]
+        if _ccnl_val:
+            srv["ccnl"] = _ccnl_val
+
+    # ── Requisiti mezzi/automezzi ─────────────────────────────────────────
+    _mezzi: dict = {}
+    _m_num_mezzi = re.search(
+        r"(\d+)\s+(?:automezz\w+|autovett\w+|mezz\w+|veicol\w+|pullman)",
+        text, re.IGNORECASE,
+    )
+    if _m_num_mezzi:
+        _mezzi["numero_minimo"] = int(_m_num_mezzi.group(1))
+    _attrezzature: list[str] = []
+    if re.search(r"pedana\s+(?:per\s+)?(?:disabili|portatori\s+d\.?\.?i\.?|persone\s+con|h\.?)", text, re.IGNORECASE):
+        _attrezzature.append("pedana per disabili")
+    if re.search(r"automezzo\s+attrezzato|veicolo\s+attrezzato", text, re.IGNORECASE):
+        _m_attr = re.search(r"(?:automezzo|veicolo)\s+attrezzato[^.]{0,80}", text, re.IGNORECASE)
+        if _m_attr:
+            _v = _clean(_m_attr.group(0))
+            if _v not in _attrezzature:
+                _attrezzature.append(_v[:100])
+    if re.search(r"sollevatore|elevatore\s+per\s+disabili|ramp[ae]\s+per", text, re.IGNORECASE):
+        _attrezzature.append("sollevatore/rampa per disabili")
+    if _mezzi or _attrezzature:
+        if _attrezzature:
+            _mezzi["attrezzature_richieste"] = _attrezzature
+        srv["requisiti_mezzi"] = _mezzi
 
     # ── Requisiti categorie per servizi analoghi ─────────────────────────
     cat_req = re.findall(
@@ -663,6 +741,8 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
     # ── Strategia 2 (fallback): regex su testo libero ────────────────────
     if not figure:
         ruoli_patterns = [
+            (r"(?:autista|autotrasportator\w+)", None),
+            (r"(?:accompagnator\w+)", None),
             (r"(?:progettist\w+\s+(?:struttur\w+|architetton\w+|impiantist\w+))", None),
             (r"(?:direttore\s+(?:dei\s+)?lavori)", None),
             (r"(?:coordinatore\s+(?:per\s+la\s+)?sicurezza\s+in\s+fase\s+di\s+(?:progettazione|esecuzione))", None),
@@ -768,6 +848,7 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                                 "specialista", "consulente", "verificat", "topograf",
                                 "bim", "operativ", "lavori", "sicurezza", "struttur",
                                 "impianti", "edilizia", "manutenzione",
+                                "autista", "accompagnat", "conducent", "operatore",
                             ]):
                                 figure.append({"ruolo": role_text[:200]})
                     if figure:
