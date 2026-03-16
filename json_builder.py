@@ -110,8 +110,16 @@ def build_output(nested: dict) -> dict:
         importo = _parse_float(lotto.get("importo_base_asta"))
         quota_fissa = None
         quota_rib = None
+        costo_mano = _parse_float(lotto.get("costo_manodopera") or ic.get("costo_manodopera"))
+        imp_rib_dir = _parse_float(lotto.get("importo_soggetto_ribasso") or ic.get("importo_totale_soggetto_ribasso"))
         perc_rib = lotto.get("quota_ribassabile_percentuale") or ic.get("quota_ribassabile_percentuale")
-        if importo and perc_rib:
+        if costo_mano and importo:
+            quota_fissa = costo_mano
+            quota_rib = round(importo - costo_mano, 2)
+        elif imp_rib_dir and importo:
+            quota_rib = imp_rib_dir
+            quota_fissa = round(importo - imp_rib_dir, 2)
+        elif importo and perc_rib:
             perc_fissa = 100 - perc_rib
             quota_fissa = round(importo * perc_fissa / 100, 2)
             quota_rib = round(importo * perc_rib / 100, 2)
@@ -308,6 +316,8 @@ def build_output(nested: dict) -> dict:
 
     # ── Sopralluogo ──
     sopralluogo = None
+    if sop is None:
+        sop = {}
     if sop:
         obblig = sop.get("obbligatorio", False)
         note_sop_parts = []
@@ -539,6 +549,13 @@ def build_output(nested: dict) -> dict:
                 fasi.append(f"{label}: {v} {unit}")
         if fasi:
             note_temp = (note_temp + ". " if note_temp else "") + ". ".join(fasi)
+        # School year duration
+        _aa_ss = dur.get("anni_scolastici")
+        if _aa_ss:
+            aa_str = f"Anni scolastici: {', '.join(_aa_ss)}"
+            note_temp = (note_temp + ". " if note_temp else "") + aa_str
+        if dur.get("prorogabile") is False:
+            note_temp = (note_temp + " – " if note_temp else "") + "non prorogabile"
 
     durata_gg = temp.get("durata_esecuzione_giorni") or giorni_dur
     # Fallback da mesi nelle tempistiche
@@ -568,10 +585,11 @@ def build_output(nested: dict) -> dict:
 
     # ── Garanzia definitiva ──
     gar_def = None
-    if isinstance(gd_raw, dict) and any(k in gd_raw for k in ("dovuta", "percentuale")):
+    if isinstance(gd_raw, dict) and any(k in gd_raw for k in ("dovuta", "percentuale", "note")):
         gar_def = GaranziaDefinitiva(
             richiesta=gd_raw.get("dovuta", False),
             percentuale=_parse_float(gd_raw.get("percentuale")),
+            note=gd_raw.get("note"),
         )
 
     # ── Polizza RC professionale ──
@@ -589,6 +607,7 @@ def build_output(nested: dict) -> dict:
         rev = RevisionePrezzi(
             ammessa=rev_raw.get("ammessa", False),
             soglia_percentuale=_parse_float(rev_raw.get("soglia_percentuale")),
+            note=rev_raw.get("note"),
         )
 
     # ── Note particolari ──
@@ -649,8 +668,24 @@ def build_output(nested: dict) -> dict:
     # Oneri sicurezza
     oneri = ic.get("oneri_sicurezza")
     if oneri:
-        note_list.append(f"Oneri sicurezza: € {oneri:,.2f}")
-    # Cause esclusione
+        note_list.append(f"Oneri sicurezza: € {oneri:,.2f}")    # CCNL
+    _ccnl_note = None
+    rp_raw = nested.get("requisiti_partecipazione", {})
+    ctp_raw = rp_raw.get("capacita_tecnico_professionale", {}) if isinstance(rp_raw, dict) else {}
+    _srv_raw = ctp_raw.get("servizi_analoghi", {}) if isinstance(ctp_raw, dict) else {}
+    _ccnl_note = ctp_raw.get("ccnl") if isinstance(ctp_raw, dict) else None
+    if _ccnl_note:
+        note_list.append(f"CCNL applicabile: {_ccnl_note}")
+    # Clausola sociale
+    if isinstance(_srv_raw, dict) and _srv_raw.get("clausola_sociale"):
+        note_list.append("Clausola sociale: obbligo di riassorbimento personale")
+    # Quote occupazionali
+    _quote_raw = _srv_raw.get("quote_occupazionali", {}) if isinstance(_srv_raw, dict) else {}
+    if isinstance(_quote_raw, dict):
+        if _quote_raw.get("giovani_30_percento"):
+            note_list.append("Riserva assunzioni: 30% a giovani")
+        if _quote_raw.get("donne_30_percento"):
+            note_list.append("Riserva assunzioni: 30% a donne")    # Cause esclusione
     ce = nested.get("cause_esclusione", {})
     if isinstance(ce, dict):
         if ce.get("automatiche"):

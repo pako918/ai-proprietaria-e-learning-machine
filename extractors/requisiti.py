@@ -260,6 +260,28 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
         if _ccnl_val:
             srv["ccnl"] = _ccnl_val
 
+    # ── Clausola sociale (riassorbimento personale) ───────────────────────
+    if re.search(
+        r"clausola\s+sociale|riassorbimento.{0,60}personale|obbligo.{0,60}(?:riassumere|riassorbimento)",
+        text, re.IGNORECASE,
+    ):
+        srv["clausola_sociale"] = True
+        m_cl = re.search(
+            r"clausola\s+sociale[^.]{0,300}\.",
+            text, re.IGNORECASE,
+        )
+        if m_cl:
+            srv["clausola_sociale_nota"] = _clean(m_cl.group(0))[:300]
+
+    # ── Quote occupazionali (30% giovani / 30% donne) ─────────────────────
+    _quote: dict = {}
+    if re.search(r"30\s*%[^.]{0,80}(?:giovan[ie]|under\s*\d{2})", text, re.IGNORECASE):
+        _quote["giovani_30_percento"] = True
+    if re.search(r"30\s*%[^.]{0,80}(?:donn[ea]|genere\s+femminil)", text, re.IGNORECASE):
+        _quote["donne_30_percento"] = True
+    if _quote:
+        srv["quote_occupazionali"] = _quote
+
     # ── Requisiti mezzi/automezzi ─────────────────────────────────────────
     _mezzi: dict = {}
     _m_num_mezzi = re.search(

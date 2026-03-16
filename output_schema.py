@@ -243,6 +243,7 @@ class RevisionePrezzi(BaseModel):
     soglia_percentuale: Optional[float] = None
     percentuale_applicabile: Optional[float] = None
     indice_riferimento: Optional[str] = None
+    note: Optional[str] = None
 
 
 # ═════════════════════════════════════════════════════════════════════════════

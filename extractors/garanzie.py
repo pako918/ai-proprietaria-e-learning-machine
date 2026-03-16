@@ -71,9 +71,10 @@ def extract_garanzie(text: str, text_lower: str) -> dict:
 
     # Importo garanzia provvisoria
     gp_imp_patterns = [
-        r"(?:garanzia\s+provvisoria|cauzione)[^€\d]{0,200}?(?:importo\s*)?(?:pari\s+ad?\s+)?(?:€|euro)\s*\.?\s*([\d.,]+)",
-        r"(?:garanzia\s+provvisoria|cauzione)[^€\d]{0,80}?[€\s]*([\d.,]+)",
-        r"(?:importo|pari\s+ad?)\s+(?:€|euro)\s*\.?\s*([\d.,]+)",
+        r"(?:garanzia\s+provvisoria|cauzione)[^€Ç\d]{0,200}?(?:importo\s*)?(?:pari\s+ad?\s+)?(?:€|Ç|euro)\s*\.?\s*([\d.,]+)",
+        r"(?:garanzia\s+provvisoria|cauzione)[^€Ç\d]{0,80}?(?:€|Ç|\s)([\d]{1,3}(?:[.,]\d{3})*[.,]\d{2})",
+        r"(?:garanzia\s+provvisoria|cauzione)[^€Ç\d]{0,80}?[€Ç\s]*([\d.,]+)",
+        r"(?:importo|pari\s+ad?)\s+(?:€|Ç|euro)\s*\.?\s*([\d.,]+)",
     ]
     for gp_pat in gp_imp_patterns:
         m_gp_imp = re.search(gp_pat, gar_section, re.IGNORECASE | re.DOTALL)
@@ -98,6 +99,18 @@ def extract_garanzie(text: str, text_lower: str) -> dict:
     m_gd_forma = re.search(r"(?:cauzione|fideiussione|garanzia fideiussoria)", gd_section, re.IGNORECASE)
     if m_gd_forma:
         gd["forma"] = _clean(m_gd_forma.group(0))
+
+    # Note garanzia definitiva
+    m_gd_stip = re.search(r"all'atto\s+della\s+stipul", gd_section or text, re.IGNORECASE)
+    m_gd_art = re.search(r"art\.?\s*117[^.]{0,80}", gd_section or text, re.IGNORECASE)
+    if m_gd_stip or m_gd_art:
+        gd["dovuta"] = True
+        parts = []
+        if m_gd_stip:
+            parts.append("Richiesta all'atto della stipulazione del contratto")
+        if m_gd_art:
+            parts.append(_clean(m_gd_art.group(0))[:80])
+        gd["note"] = ". ".join(parts)
 
     # ── Polizza RC ───────────────────────────────────────────────────────
     if "polizza" in text_lower and ("responsabilità civile" in text_lower or "rc professionale" in text_lower or "errori e omissioni" in text_lower):

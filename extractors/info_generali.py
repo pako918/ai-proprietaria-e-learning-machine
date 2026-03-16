@@ -22,7 +22,9 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
         r"(?:^|\n)\s*OGGETTO\s*[:\n]\s*\n\s*([^\n]{10,500})",
         r"(?:\d+[.)\s]+)?(?:OGGETTO|Oggetto)\s+(?:dell[\u2019']?\s*)?(?:appalto|gara|affidamento|servizio|incarico)\s*[:.\-]*\n+\s*([^\n]{10,500})",
     ]
-    _titolo_nope = {"importo", "euro ", "ribasso", "oneri sicurezza", "soggett"}
+    _titolo_nope = {"importo", "euro ", "ribasso", "oneri sicurezza", "soggett",
+                    "decreto", "prot.", "protocollo", "presidente dell", "c/o",
+                    "segreteria@", "https://", "piattaforma", "telematic"}
     for pat in titolo_patterns:
         m = re.search(pat, _titolo_text, re.IGNORECASE)
         if m:
@@ -100,7 +102,12 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
     if m_cuc:
         cuc_name = _clean(m_cuc.group(1))
         # Evita di catturare solo acronimi (es. "CUC" ripetuto senza nome)
-        if cuc_name and len(cuc_name) > 3 and not re.fullmatch(r"C\.?U\.?C\.?", cuc_name, re.I):
+        # Evita di catturare riferimenti di protocollo o decreti
+        _bad_cuc = ("prot.", "decreto", "n. 27", "n.27", "0020920", "https", "@", "pec")
+        if (cuc_name and len(cuc_name) > 3
+                and not re.fullmatch(r"C\.?U\.?C\.?", cuc_name, re.I)
+                and not any(b in cuc_name.lower() for b in _bad_cuc)
+                and not re.search(r"\d{5,}", cuc_name)):
             sa["CUC"] = cuc_name
 
     # Ente delegante (Comune che delega alla CUC)
@@ -130,6 +137,21 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
         dir_text = _clean(m_dir.group(0))
         if dir_text and ig.get("titolo") and dir_text[:30].lower() not in ig["titolo"][:100].lower():
             sa["area_direzione"] = dir_text
+
+    # Sede SA / ente delegante
+    _sede_patterns = [
+        r"(?:sede[^::\n]{0,20}[:\-]\s*)([Vv]ia\s+[^\n,;]{5,80}[,\s]+\d{5}[^\n,;]{0,60})",
+        r"([Vv]ia\s+[A-Z][^\n,;]{3,60}[,\s]+\d{5}(?:[^\n,;]{0,40})?)",
+        r"([Pp]iazza\s+[A-Z][^\n,;]{3,60}[,\s]+\d{5}(?:[^\n,;]{0,40})?)",
+    ]
+    _sede_nope = ("https", "pec", "@", "decreto", "prot.")
+    for _sp in _sede_patterns:
+        _m_sede = re.search(_sp, header, re.IGNORECASE)
+        if _m_sede:
+            _sv = _clean(_m_sede.group(1))
+            if _sv and len(_sv) > 8 and not any(b in _sv.lower() for b in _sede_nope):
+                sa["sede"] = _sv[:200]
+                break
 
     if sa:
         ig["stazione_appaltante"] = sa
@@ -180,14 +202,24 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
                 continue
             _seen_rup_names.add(name)
             ctx = text[max(0, m.start() - 300): m.end() + 300].lower()
-            is_affid = bool(re.search(r"affidamento|centrale\s+unica|c\.?u\.?c\b", ctx))
+            is_affid = bool(re.search(
+                r"affidamento|centrale\s+unica|c\.?u\.?c\b|montedoro|unione\s+dei\s+comuni|stazione\s+appaltante\s+delegat",
+                ctx,
+            ))
+            is_comune = bool(re.search(
+                r"comune\s+di\s+turi|ente\s+delegante|programmazione|progettazione[^\w].*esecuzione",
+                ctx,
+            ))
             rd = _build_rup(name, m.start())
-            if is_affid and not rup_aff:
+            if is_affid and not is_comune and not rup_aff:
                 rd["ruolo"] = "Affidamento (CUC)"
                 rup_aff = rd
-            elif not rup_main:
+            elif (is_comune or not is_affid) and not rup_main:
                 rd["ruolo"] = "Programmazione / Progettazione / Esecuzione"
                 rup_main = rd
+            elif is_affid and not rup_aff:
+                rd["ruolo"] = "Affidamento (CUC)"
+                rup_aff = rd
         if rup_main and rup_aff:
             break
 

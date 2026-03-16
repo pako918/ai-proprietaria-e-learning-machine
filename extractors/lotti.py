@@ -99,6 +99,20 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
         if val and val > 100:
             ic["importo_lavori_complessivo"] = val
 
+    # Costo manodopera (quota fissa non soggetta a ribasso)
+    mano_patterns = [
+        r"(?:costo|costi)\s+della\s+manodopera[^€Ç\d]{0,80}?(?:€|Ç|euro)?\s*\.?\s*([\d.,]+)",
+        r"quota\s+(?:non\s+soggett\w+\s+a\s+ribasso|fissa)[^€Ç\d]{0,80}?(?:€|Ç|euro)?\s*\.?\s*([\d.,]+)",
+        r"manodopera[^€Ç\d]{0,60}?(?:€|Ç|euro)\s*\.?\s*([\d.,]+)",
+    ]
+    for _mp in mano_patterns:
+        m_mano = re.search(_mp, text, re.IGNORECASE)
+        if m_mano:
+            v = _parse_euro(m_mano.group(1))
+            if v and v > 100:
+                ic["costo_manodopera"] = v
+                break
+
     # Quota ribassabile percentuale
     m_quota = re.search(r"(?:quota\s+)?(?:soggett\w+\s+a\s+)?ribasso[^.]{0,80}?(\d{1,3})\s*%", text, re.IGNORECASE)
     if m_quota:
@@ -113,13 +127,24 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
 
     # Revisione prezzi
     if "revisione" in text_lower and "prezzi" in text_lower:
-        rev = {"ammessa": True}
-        m_rev_perc = re.search(r"(?:revisione[^.]{0,200}?)(\d{1,3})\s*%\s*(?:dell['\u2019])?(?:variazione|incremento)", text, re.IGNORECASE)
-        if not m_rev_perc:
-            m_rev_perc = re.search(r"(?:soglia|superiore)\s+(?:al\s+)?(\d{1,3})\s*%", text[text_lower.find("revisione"):text_lower.find("revisione")+500], re.IGNORECASE)
-        if m_rev_perc:
-            rev["soglia_percentuale"] = int(m_rev_perc.group(1))
-        ic["revisione_prezzi"] = rev
+        _fisso = bool(re.search(
+            r"fisso\s+e\s+invariabile|non\s+soggetto\s+a\s+(?:variazioni?|revisione)",
+            text, re.IGNORECASE,
+        ))
+        if _fisso:
+            rev = {"ammessa": False, "note": "Corrispettivo fisso e invariabile"}
+            m_art60 = re.search(r"art\.?\s*60[^.]{0,100}", text, re.IGNORECASE)
+            if m_art60:
+                rev["riferimento_normativo"] = _clean(m_art60.group(0))[:120]
+            ic["revisione_prezzi"] = rev
+        else:
+            rev = {"ammessa": True}
+            m_rev_perc = re.search(r"(?:revisione[^.]{0,200}?)(\d{1,3})\s*%\s*(?:dell['\u2019])?(?:variazione|incremento)", text, re.IGNORECASE)
+            if not m_rev_perc:
+                m_rev_perc = re.search(r"(?:soglia|superiore)\s+(?:al\s+)?(\d{1,3})\s*%", text[text_lower.find("revisione"):text_lower.find("revisione")+500], re.IGNORECASE)
+            if m_rev_perc:
+                rev["soglia_percentuale"] = int(m_rev_perc.group(1))
+            ic["revisione_prezzi"] = rev
 
     # --- Luogo di esecuzione (a livello di documento) ---
     luogo_esecuzione = None

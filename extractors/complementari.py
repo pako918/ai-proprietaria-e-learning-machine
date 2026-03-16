@@ -118,6 +118,15 @@ def extract_complementari(text: str, text_lower: str) -> dict:
         )
         if m_sop_term:
             sop["termine"] = m_sop_term.group(1)
+    # Full-text fallback when no section was found
+    if not sop:
+        _sop_neg = re.search(
+            r"sopralluogo[^.\n]{0,200}?(?:non\s+(?:è\s+)?(?:previsto|richiesto|obbligatorio)|"
+            r"\bnon\s+previsto\b|\bnessun\s+sopralluogo\b)",
+            text, re.IGNORECASE,
+        )
+        if _sop_neg:
+            sop["obbligatorio"] = False
     out["sopralluogo"] = sop
 
     # ══════════════════════════════════════════════════════════════════════

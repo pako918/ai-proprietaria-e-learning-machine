@@ -52,8 +52,8 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
         r"(?:Punteggio\s+)?[Oo]fferta\s+tecnica[^\d]{0,30}(\d{1,3})\s*(?:punti|pt|/)",
         r"[Oo]fferta\s+[Tt]ecnica\s+(\d{1,3})\s*(?:$|\n)",
         r"(?:tecnic\w+|qualit[àa])\s*[:=]\s*(?:max\.?\s*)?(?:punti\s+)?(\d{1,3})",
-        r"(\d{1,3})\s*punti\s*[-–]\s*offerta\s+tecnica",
-    ]
+        r"(\d{1,3})\s*punti\s*[-–]\s*offerta\s+tecnica",        r"(\d{1,3})\s*punt[io]\s+(?:per\s+)?(?:l['\u2019]\s*)?offerta\s+tecnica",
+        r"(?:Punteggio\s+)?[Oo]fferta\s+tecnica\s*[:=]\s*(\d{1,3})\b",    ]
     for pt_pat in pt_patterns:
         m_pt = re.search(pt_pat, crit_section or text, re.IGNORECASE | re.MULTILINE)
         if m_pt:
@@ -68,8 +68,8 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
         r"(?:Punteggio\s+)?[Oo]fferta\s+economica[^\d]{0,30}(\d{1,3})\s*(?:punti|pt|/)",
         r"[Oo]fferta\s+[Ee]conomica\s+(\d{1,3})\s*(?:$|\n)",
         r"(?:economic\w+|prezzo)\s*[:=]\s*(?:max\.?\s*)?(?:punti\s+)?(\d{1,3})",
-        r"(\d{1,3})\s*punti\s*[-–]\s*offerta\s+economica",
-    ]
+        r"(\d{1,3})\s*punti\s*[-–]\s*offerta\s+economica",        r"(\d{1,3})\s*punt[io]\s+(?:per\s+)?(?:l['\u2019]\s*)?offerta\s+economica",
+        r"(?:Punteggio\s+)?[Oo]fferta\s+economica\s*[:=]\s*(\d{1,3})\b",    ]
     for pe_pat in pe_patterns:
         m_pe = re.search(pe_pat, crit_section or text, re.IGNORECASE)
         if m_pe:

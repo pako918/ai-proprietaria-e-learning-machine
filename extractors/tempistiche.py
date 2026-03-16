@@ -144,6 +144,18 @@ def extract_tempistiche(text: str, text_lower: str) -> tuple[dict, dict | None]:
     if dur_c:
         durata_contratto = dur_c
 
+    # School year duration and prorogability
+    _aa_ss = re.findall(r"a\.?s\.?\s*20\d\d[/\-]20?\d\d", text, re.IGNORECASE)
+    if _aa_ss:
+        if durata_contratto is None:
+            durata_contratto = {}
+        durata_contratto["anni_scolastici"] = _aa_ss
+    _non_pror = bool(re.search(r"non\s+prorogabil\w+|senza\s+proroga", text, re.IGNORECASE))
+    if _non_pror:
+        if durata_contratto is None:
+            durata_contratto = {}
+        durata_contratto["prorogabile"] = False
+
     # Società di scopo
     if "società di scopo" in text_lower:
         sds = {"obbligatoria": True}
