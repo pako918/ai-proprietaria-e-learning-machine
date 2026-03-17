@@ -221,6 +221,23 @@
   .toast-container { position: fixed; bottom: 2rem; right: 2rem; display: flex; flex-direction: column; gap: 8px; z-index: 9999; }
   .toast { background: var(--ink); color: white; padding: 10px 16px; border-radius: 8px; font-size: 0.83rem; border-left: 3px solid var(--accent); animation: slideIn .3s ease; display: flex; align-items: center; gap: 8px; max-width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,.3); }
   .toast.ok { border-color: var(--ok); }
+
+  /* Quick edit overlay (for custom-rendered table cells) */
+  #quick-edit-box { position: fixed; z-index: 3000; background: white; border: 1px solid var(--accent2); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.22); min-width: 300px; max-width: 440px; display: none; }
+  #quick-edit-box.visible { display: block; animation: fadeIn .15s ease; }
+  .qe-label { font-family: var(--font-m); font-size: 0.62rem; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 6px; }
+  .qe-row { display: flex; gap: 6px; }
+  .qe-input { flex: 1; border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; font-family: var(--font-b); font-size: 0.88rem; color: var(--ink); outline: none; min-width: 0; }
+  .qe-input:focus { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(200,66,26,.1); }
+  /* Table cell edit buttons */
+  .tbl-edit-btn { background: none; border: 1px solid transparent; cursor: pointer; color: #ccc; font-size: 0.7rem; padding: 1px 4px; border-radius: 3px; transition: all .15s; opacity: 0; vertical-align: middle; margin-left: 4px; }
+  tr:hover .tbl-edit-btn, .tbl-edit-btn:focus { opacity: 1; color: var(--accent2); border-color: rgba(200,66,26,.15); }
+  .tbl-edit-btn:hover { background: var(--paper2); color: var(--accent); }
+  /* Sub-categories inside lot rows */
+  .lot-cats-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; margin: 6px 0 0 0; background: #fafaf8; border-radius: 6px; overflow: hidden; }
+  .lot-cats-table th { font-family: var(--font-m); font-size: 0.6rem; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); padding: 4px 8px; background: #f0ede7; text-align: left; }
+  .lot-cats-table td { padding: 4px 8px; border-top: 1px solid #eee; }
+  .lot-row-wrap td { vertical-align: top; padding-bottom: 10px; }
   @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
   /* Responsive */
@@ -486,6 +503,18 @@
 </div>
 
 <div class="toast-container" id="toast-container"></div>
+
+<!-- Quick-edit overlay (reused for all custom-rendered cells) -->
+<div id="quick-edit-box">
+  <div class="qe-label" id="qe-label"></div>
+  <div class="qe-row">
+    <input class="qe-input" id="qe-input"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();_saveQuickEdit();}if(event.key==='Escape')_closeQuickEdit();"/>
+    <button class="btn-save-edit" onclick="_saveQuickEdit()">✅</button>
+    <button class="btn-cancel-edit" onclick="_closeQuickEdit()">✖</button>
+  </div>
+  <div style="font-size:0.68rem;color:#aaa;margin-top:5px">Correzione salvata nel dataset proprietario</div>
+</div>
 
 <script>
 const API = window.location.origin;
@@ -858,44 +887,102 @@ function showResults(data, filename) {
       // Tipologia
       if (dl && dl.tipologia) {
         const tipCard = document.createElement('div'); tipCard.className = 'result-grid';
-        tipCard.innerHTML = `<div class="result-card full-width highlight"><div class="card-top"><div class="result-label"><span class="icon">📋</span>Tipologia</div></div><div class="result-value">${escapeHtml(dl.tipologia)}</div></div>`;
+        const tipId = 'tip_' + Math.random().toString(36).slice(2,8);
+        tipCard.innerHTML = `<div class="result-card full-width highlight"><div class="card-top"><div class="result-label"><span class="icon">📋</span>Tipologia</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('descrizione_lavori_con_importo_totale.tipologia','${escapeHtml(dl.tipologia)}','Tipologia',this,function(v){document.getElementById('${tipId}').textContent=v;currentResult.descrizione_lavori_con_importo_totale.tipologia=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${tipId}">${escapeHtml(dl.tipologia)}</div></div>`;
         sec.appendChild(tipCard);
       }
       // Importo totale procedura
-      if (dl && dl.importo_totale_procedura_euro) {
+      if (dl && dl.importo_totale_procedura_euro != null) {
         const impCard = document.createElement('div'); impCard.className = 'result-grid';
-        impCard.innerHTML = `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">💶</span>Importo Totale Procedura</div></div><div class="result-value money">${fmtEuro(dl.importo_totale_procedura_euro)}</div></div>`;
+        const impId = 'imp_tot_' + Math.random().toString(36).slice(2,8);
+        tipCard2 = `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">💶</span>Importo Totale Procedura</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('descrizione_lavori_con_importo_totale.importo_totale_procedura_euro','${dl.importo_totale_procedura_euro}','Importo Totale Procedura',this,function(v){document.getElementById('${impId}').textContent=fmtEuro(parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'))||v);currentResult.descrizione_lavori_con_importo_totale.importo_totale_procedura_euro=parseFloat(v)||v;})" title="Modifica">✏️</button></div></div><div class="result-value money" id="${impId}">${fmtEuro(dl.importo_totale_procedura_euro)}</div></div>`;
+        impCard.innerHTML = tipCard2;
         sec.appendChild(impCard);
       }
-      // Tabella lotti
+      // Tabella lotti (ciascun lotto con le sue categorie sotto)
       const lotti = (dl && dl.lotti) || [];
       if (lotti.length > 0) {
-        let h = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">📦</span>Dettaglio per Lotto</div><table class="lotti-table"><thead><tr><th>#</th><th>Ubicazione</th><th>Importo</th><th>Quota Fissa 65%</th><th>Quota Ribass. 35%</th></tr></thead><tbody>`;
         lotti.forEach(l => {
-          h += `<tr><td><strong>Lotto ${l.lotto}</strong></td><td style="font-size:0.82rem">${escapeHtml(l.ubicazione||'—')}</td><td style="color:var(--ok);font-family:var(--font-m)">${l.importo_euro!=null ? fmtEuro(l.importo_euro) : '—'}</td><td style="font-family:var(--font-m)">${l.quota_fissa_65_percento_euro!=null ? fmtEuro(l.quota_fissa_65_percento_euro) : '—'}</td><td style="font-family:var(--font-m)">${l.quota_ribassabile_35_percento_euro!=null ? fmtEuro(l.quota_ribassabile_35_percento_euro) : '—'}</td></tr>`;
-        });
-        h += '</tbody></table></div>';
-        const lottiWrap = document.createElement('div'); lottiWrap.className = 'result-grid'; lottiWrap.innerHTML = h;
-        sec.appendChild(lottiWrap);
-
-        // Prestazioni per lotto
-        lotti.forEach(l => {
+          const li = l.lotto;
+          const lotCard = document.createElement('div'); lotCard.className = 'result-grid';
+          // Helpers for editable cells
+          const mkId = () => 'lc_'+Math.random().toString(36).slice(2,8);
+          const ubId=mkId(), impId=mkId(), qfId=mkId(), qrId=mkId();
+          const mkBtn = (path, val, label, upd) =>
+            `<button class="tbl-edit-btn" onclick="_openQuickEdit('${escapeHtml(path)}','${escapeHtml(String(val??''))}','${escapeHtml(label)}',this,${upd})" title="Modifica ${escapeHtml(label)}">✏️</button>`;
+          let h = `<div class="result-card full-width" style="margin-top:4px">`;
+          h += `<div class="result-label" style="margin-bottom:8px"><span class="icon">📦</span>Lotto ${li}</div>`;
+          h += `<table class="lotti-table"><tbody>`;
+          h += `<tr><th style="width:160px">Ubicazione</th><td><span id="${ubId}">${escapeHtml(l.ubicazione||'—')}</span>`+
+            mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.ubicazione`,l.ubicazione||'',`Lotto ${li} — Ubicazione`,
+              `function(v){document.getElementById('${ubId}').textContent=v;}`)+`</td></tr>`;
+          h += `<tr><th>Importo Base Gara</th><td style="color:var(--ok);font-family:var(--font-m)"><span id="${impId}">${l.importo_euro!=null?fmtEuro(l.importo_euro):'—'}</span>`+
+            mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.importo_euro`,l.importo_euro||'',`Lotto ${li} — Importo`,
+              `function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${impId}').textContent=isNaN(n)?v:fmtEuro(n);}`) +`</td></tr>`;
+          h += `<tr><th>Quota Fissa 65%</th><td style="font-family:var(--font-m)"><span id="${qfId}">${l.quota_fissa_65_percento_euro!=null?fmtEuro(l.quota_fissa_65_percento_euro):'—'}</span>`+
+            mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.quota_fissa_65_percento_euro`,l.quota_fissa_65_percento_euro||'',`Lotto ${li} — Quota Fissa 65%`,
+              `function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${qfId}').textContent=isNaN(n)?v:fmtEuro(n);}`) +`</td></tr>`;
+          h += `<tr><th>Quota Ribassabile 35%</th><td style="font-family:var(--font-m)"><span id="${qrId}">${l.quota_ribassabile_35_percento_euro!=null?fmtEuro(l.quota_ribassabile_35_percento_euro):'—'}</span>`+
+            mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.quota_ribassabile_35_percento_euro`,l.quota_ribassabile_35_percento_euro||'',`Lotto ${li} — Quota Ribassabile 35%`,
+              `function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${qrId}').textContent=isNaN(n)?v:fmtEuro(n);}`) +`</td></tr>`;
+          h += `</tbody></table>`;
+          // Prestazioni per questo lotto
           const prest = l.prestazioni || [];
           if (prest.length > 0) {
-            let ph = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">📋</span>Prestazioni Lotto ${l.lotto}</div><table class="lotti-table"><thead><tr><th>Descrizione</th><th>CPV</th><th>Tipo</th><th>Importo</th></tr></thead><tbody>`;
-            prest.forEach(p => {
-              ph += `<tr><td style="font-size:0.82rem">${escapeHtml(p.descrizione||'—')}</td><td style="font-family:var(--font-m)">${escapeHtml(p.codice_CPV||'—')}</td><td>${escapeHtml(p.tipo||'—')}</td><td style="color:var(--ok);font-family:var(--font-m)">${p.importo!=null ? fmtEuro(p.importo) : '—'}</td></tr>`;
+            h += `<div style="margin-top:8px"><div style="font-family:var(--font-m);font-size:0.65rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Prestazioni</div>`;
+            h += `<table class="lotti-table"><thead><tr><th>Descrizione</th><th>CPV</th><th>Tipo</th><th>Importo</th></tr></thead><tbody>`;
+            prest.forEach((p, pi) => {
+              const pdId=mkId(), piId=mkId();
+              h += `<tr>`;
+              h += `<td style="font-size:0.82rem"><span id="${pdId}">${escapeHtml(p.descrizione||'—')}</span>`+
+                mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.prestazioni.${pi}.descrizione`,p.descrizione||'',`Prest. ${pi+1} — Descrizione`,
+                  `function(v){document.getElementById('${pdId}').textContent=v;}`) +`</td>`;
+              h += `<td style="font-family:var(--font-m)">${escapeHtml(p.codice_CPV||'—')}</td>`;
+              h += `<td>${escapeHtml(p.tipo||'—')}</td>`;
+              h += `<td style="color:var(--ok);font-family:var(--font-m)"><span id="${piId}">${p.importo!=null?fmtEuro(p.importo):'—'}</span>`+
+                mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.prestazioni.${pi}.importo`,p.importo||'',`Prest. ${pi+1} — Importo`,
+                  `function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${piId}').textContent=isNaN(n)?v:fmtEuro(n);}`) +`</td>`;
+              h += `</tr>`;
             });
-            ph += '</tbody></table></div>';
-            const prestWrap = document.createElement('div'); prestWrap.className = 'result-grid'; prestWrap.innerHTML = ph;
-            sec.appendChild(prestWrap);
+            h += `</tbody></table></div>`;
           }
+          // Categorie per questo lotto
+          const lotCats = l.categorie || [];
+          if (lotCats.length > 0) {
+            h += `<div style="margin-top:8px"><div style="font-family:var(--font-m);font-size:0.65rem;color:var(--ink-soft);text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">Categorie d'Opera</div>`;
+            const hasDesc = lotCats.some(c=>c.descrizione);
+            const hasGrado = lotCats.some(c=>c.grado_complessita!=null);
+            h += `<table class="lot-cats-table"><thead><tr><th>Codice</th>${hasDesc?'<th>Descrizione</th>':''}${hasGrado?'<th style="text-align:center">Grado</th>':''}<th style="text-align:right">Importo Minimo</th></tr></thead><tbody>`;
+            lotCats.forEach((c, ci) => {
+              const ccId=mkId(), cdId=mkId(), cgId=mkId(), ciId=mkId();
+              h += `<tr>`;
+              h += `<td style="font-family:var(--font-m);font-weight:700;color:var(--accent)"><span id="${ccId}">${escapeHtml(c.codice||'—')}</span>`+
+                mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.categorie.${ci}.codice`,c.codice||'',`Cat. ${ci+1} — Codice`,
+                  `function(v){document.getElementById('${ccId}').textContent=v;}`) +`</td>`;
+              if (hasDesc) h += `<td style="font-size:0.78rem"><span id="${cdId}">${escapeHtml(c.descrizione||'—')}</span>`+
+                mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.categorie.${ci}.descrizione`,c.descrizione||'',`Cat. ${ci+1} — Descrizione`,
+                  `function(v){document.getElementById('${cdId}').textContent=v;}`) +`</td>`;
+              if (hasGrado) h += `<td style="text-align:center;font-family:var(--font-m);font-size:0.82rem;color:var(--ink-soft)"><span id="${cgId}">${c.grado_complessita!=null?c.grado_complessita.toFixed(2):'—'}</span>`+
+                mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.categorie.${ci}.grado_complessita`,c.grado_complessita||'',`Cat. ${ci+1} — Grado`,
+                  `function(v){document.getElementById('${cgId}').textContent=parseFloat(v)!=null?parseFloat(v).toFixed(2):v;}`) +`</td>`;
+              const imp = c.importo_complessivo_lavori_progettati_euro;
+              h += `<td style="text-align:right;color:var(--ok);font-family:var(--font-m);font-weight:600"><span id="${ciId}">${imp!=null?fmtEuro(imp):'—'}</span>`+
+                mkBtn(`descrizione_lavori_con_importo_totale.lotti.${li-1}.categorie.${ci}.importo_complessivo_lavori_progettati_euro`,imp||'',`Cat. ${ci+1} — Importo`,
+                  `function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${ciId}').textContent=isNaN(n)?v:fmtEuro(n);}`) +`</td>`;
+              h += `</tr>`;
+            });
+            h += `</tbody></table></div>`;
+          }
+          h += `</div>`;
+          lotCard.innerHTML = h;
+          sec.appendChild(lotCard);
         });
       }
       // Note
       if (dl && dl.note) {
         const noteCard = document.createElement('div'); noteCard.className = 'result-grid';
-        noteCard.innerHTML = `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note Importi</div></div><div class="result-value">${escapeHtml(dl.note)}</div></div>`;
+        const noteId = 'note_lot_'+Math.random().toString(36).slice(2,8);
+        noteCard.innerHTML = `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note Importi</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('descrizione_lavori_con_importo_totale.note','${escapeHtml(dl.note)}','Note Importi',this,function(v){document.getElementById('${noteId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${noteId}">${escapeHtml(dl.note)}</div></div>`;
         sec.appendChild(noteCard);
       }
       // Vuoto
@@ -910,42 +997,84 @@ function showResults(data, filename) {
     if (section.id === 'categorie-requisiti') {
       const rct = data.requisiti_capacita_tecnica_professionale;
       const sdp = _get(rct, 'servizi_di_punta');
+      const mkId = () => 'qc_'+Math.random().toString(36).slice(2,8);
       if (sdp) {
-        // Info servizi di punta — cards separate per ogni campo
+        // Info servizi di punta — editabili
         const infoGrid = document.createElement('div'); infoGrid.className = 'result-grid';
-        if (sdp.numero) infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">🔢</span>N. Servizi Richiesti</div></div><div class="result-value" style="font-size:1.3rem;font-weight:700;color:var(--accent)">${sdp.numero}</div></div>`;
-        if (sdp.tipologia) infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">📋</span>Tipologia Servizi</div></div><div class="result-value">${escapeHtml(sdp.tipologia)}</div></div>`;
-        if (sdp.periodo) infoGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📅</span>Periodo di Riferimento</div></div><div class="result-value">${escapeHtml(sdp.periodo)}</div></div>`;
+        if (sdp.numero != null) {
+          const nId=mkId();
+          infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">🔢</span>N. Servizi Richiesti</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_tecnica_professionale.servizi_di_punta.numero','${sdp.numero}','N. Servizi Richiesti',this,function(v){document.getElementById('${nId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" style="font-size:1.3rem;font-weight:700;color:var(--accent)" id="${nId}">${sdp.numero}</div></div>`;
+        }
+        if (sdp.tipologia) {
+          const tId=mkId();
+          infoGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">📋</span>Tipologia Servizi</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_tecnica_professionale.servizi_di_punta.tipologia','${escapeHtml(sdp.tipologia)}','Tipologia Servizi',this,function(v){document.getElementById('${tId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${tId}">${escapeHtml(sdp.tipologia)}</div></div>`;
+        }
+        if (sdp.periodo) {
+          const pId=mkId();
+          infoGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📅</span>Periodo di Riferimento</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_tecnica_professionale.servizi_di_punta.periodo','${escapeHtml(sdp.periodo)}','Periodo',this,function(v){document.getElementById('${pId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${pId}">${escapeHtml(sdp.periodo)}</div></div>`;
+        }
         if (infoGrid.innerHTML) sec.appendChild(infoGrid);
 
-        // Tabella categorie con importi
+        // Tabella categorie globali (servizi_di_punta.categorie) con edit
         const cats = sdp.categorie || [];
-        if (cats.length > 0) {
-          // Calcola totale importi per il footer
-          let totale = 0;
-          cats.forEach(c => { if (c.importo_complessivo_lavori_progettati_euro) totale += c.importo_complessivo_lavori_progettati_euro; });
+        // Raccogli anche le categorie per lotto da descrizione_lavori
+        const lottiCats = [];
+        ((data.descrizione_lavori_con_importo_totale||{}).lotti||[]).forEach(l => {
+          (l.categorie||[]).forEach(c => lottiCats.push({...c, _lotto: l.lotto}));
+        });
+        const allCats = [...cats, ...lottiCats.filter(c => !cats.find(gc => gc.codice === c.codice))];
+        const hasLottoCol = allCats.some(c => c.lotto != null || c._lotto != null);
+        if (allCats.length > 0) {
+          const hasDesc = allCats.some(c => c.descrizione);
+          const hasGrado = allCats.some(c => c.grado_complessita != null);
           let h = `<div class="result-card full-width" style="padding:0;overflow:hidden">`;
-          h += `<div style="padding:12px 16px 8px;display:flex;align-items:center;justify-content:space-between"><div class="result-label" style="margin:0"><span class="icon">🏗</span>Categorie d'Opera Richieste</div>`;
-          if (totale > 0) h += `<div style="font-family:var(--font-m);font-size:0.78rem;color:var(--ink-soft)">Totale: <strong style="color:var(--ok)">${fmtEuro(totale)}</strong></div>`;
-          h += `</div>`;
-          h += `<table class="lotti-table" style="margin:0"><thead><tr><th style="width:70px">Codice</th><th>Descrizione Categoria</th><th style="width:180px;text-align:right">Importo Lavori Progettati</th></tr></thead><tbody>`;
-          cats.forEach(c => {
+          h += `<div style="padding:12px 16px 8px"><div class="result-label" style="margin:0"><span class="icon">🏗</span>Categorie d'Opera Richieste</div></div>`;
+          h += `<table class="lotti-table" style="margin:0"><thead><tr>`;
+          if (hasLottoCol) h += `<th style="width:70px">Lotto</th>`;
+          h += `<th style="width:80px">Codice</th>`;
+          if (hasDesc) h += `<th>Descrizione Categoria</th>`;
+          if (hasGrado) h += `<th style="width:110px;text-align:center">Grado Compl.</th>`;
+          h += `<th style="width:200px;text-align:right">Importo Minimo Richiesto</th>`;
+          h += `</tr></thead><tbody>`;
+          allCats.forEach((c, ci) => {
+            const isPerLot = c._lotto != null;
+            const basePath = isPerLot
+              ? `descrizione_lavori_con_importo_totale.lotti.${c._lotto-1}.categorie.${ci}`
+              : `requisiti_capacita_tecnica_professionale.servizi_di_punta.categorie.${ci}`;
             const imp = c.importo_complessivo_lavori_progettati_euro;
-            h += `<tr><td style="font-family:var(--font-m);font-weight:700;font-size:0.9rem;color:var(--accent)">${escapeHtml(c.codice||'—')}</td>`;
-            h += `<td style="font-size:0.82rem">${escapeHtml(c.descrizione||'—')}</td>`;
-            h += `<td style="text-align:right;color:var(--ok);font-family:var(--font-m);font-weight:600">${imp!=null ? fmtEuro(imp) : '—'}</td></tr>`;
+            const ccId=mkId(), cdId=mkId(), cgId=mkId(), ciId=mkId(), clId=mkId();
+            h += `<tr>`;
+            if (hasLottoCol) {
+              const lotVal = c.lotto || c._lotto || '';
+              h += `<td style="font-family:var(--font-m);font-size:0.8rem;color:var(--ink-soft)">`+
+                `<span id="${clId}">${lotVal||'—'}</span>`+
+                `<button class="tbl-edit-btn" onclick="_openQuickEdit('${basePath}.lotto','${lotVal}','Lotto',this,function(v){document.getElementById('${clId}').textContent=v;})" title="Modifica Lotto">✏️</button></td>`;
+            }
+            h += `<td style="font-family:var(--font-m);font-weight:700;font-size:0.9rem;color:var(--accent)">`+
+              `<span id="${ccId}">${escapeHtml(c.codice||'—')}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${basePath}.codice','${escapeHtml(c.codice||'')}','Codice',this,function(v){document.getElementById('${ccId}').textContent=v;})" title="Modifica Codice">✏️</button></td>`;
+            if (hasDesc) h += `<td style="font-size:0.82rem"><span id="${cdId}">${escapeHtml(c.descrizione||'—')}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${basePath}.descrizione','${escapeHtml(c.descrizione||'')}','Descrizione',this,function(v){document.getElementById('${cdId}').textContent=v;})" title="Modifica Descrizione">✏️</button></td>`;
+            if (hasGrado) h += `<td style="text-align:center;font-family:var(--font-m);font-size:0.85rem;color:var(--ink-soft)">`+
+              `<span id="${cgId}">${c.grado_complessita!=null?c.grado_complessita.toFixed(2):'—'}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${basePath}.grado_complessita','${c.grado_complessita||''}','Grado Complessità',this,function(v){var n=parseFloat(v);document.getElementById('${cgId}').textContent=isNaN(n)?v:n.toFixed(2);})" title="Modifica Grado">✏️</button></td>`;
+            h += `<td style="text-align:right;color:var(--ok);font-family:var(--font-m);font-weight:600">`+
+              `<span id="${ciId}">${imp!=null?fmtEuro(imp):'—'}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${basePath}.importo_complessivo_lavori_progettati_euro','${imp||''}','Importo Minimo',this,function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${ciId}').textContent=isNaN(n)?v:fmtEuro(n);})" title="Modifica Importo">✏️</button></td>`;
+            h += `</tr>`;
           });
           h += '</tbody></table></div>';
           const catWrap = document.createElement('div'); catWrap.className = 'result-grid'; catWrap.innerHTML = h;
           sec.appendChild(catWrap);
         }
         if (sdp.note) {
+          const nId=mkId();
           const noteCard = document.createElement('div'); noteCard.className = 'result-grid';
-          noteCard.innerHTML = `<div class="note-item" style="margin-top:4px"><span>📝</span><span>${escapeHtml(sdp.note)}</span></div>`;
+          noteCard.innerHTML = `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_tecnica_professionale.servizi_di_punta.note','${escapeHtml(sdp.note)}','Note',this,function(v){document.getElementById('${nId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${nId}">${escapeHtml(sdp.note)}</div></div>`;
           sec.appendChild(noteCard);
         }
       }
-      if (!sdp || !(sdp.categorie||[]).length) {
+      if (!sdp && !((data.descrizione_lavori_con_importo_totale?.lotti||[]).some(l=>(l.categorie||[]).length>0))) {
         const emptyWrap = document.createElement('div'); emptyWrap.className = 'result-grid';
         emptyWrap.innerHTML = '<div class="result-card full-width"><div class="result-value missing">— Nessuna categoria/servizi di punta rilevati</div></div>';
         sec.appendChild(emptyWrap);
@@ -968,22 +1097,38 @@ function showResults(data, filename) {
       }
 
       if (profili.length > 0) {
-        let h = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">👤</span>Profili Richiesti</div><table class="lotti-table"><thead><tr><th>N.</th><th>Ruolo</th><th>Requisiti</th></tr></thead><tbody>`;
-        profili.forEach(p => {
-          // Build structured detail tags
+        const mkId2 = () => 'fp_'+Math.random().toString(36).slice(2,8);
+        let h = `<div class="result-card full-width" style="margin-top:4px"><div class="result-label" style="margin-bottom:8px"><span class="icon">👤</span>Profili Richiesti</div><table class="lotti-table"><thead><tr><th style="width:36px">N.</th><th style="width:200px">Ruolo</th><th>Requisiti</th></tr></thead><tbody>`;
+        profili.forEach((p, pi) => {
+          const pBase = `requisiti_idoneita_professionale.profili_richiesti.${pi}`;
           const detailParts = [];
-          if (p.laurea) detailParts.push(`<span class="badge bg-info">🎓 ${escapeHtml(p.laurea)}</span>`);
-          if (p.diploma) detailParts.push(`<span class="badge bg-info">📜 ${escapeHtml(p.diploma)}</span>`);
-          if (p.abilitazione) detailParts.push(`<span class="badge bg-warning">✅ ${escapeHtml(p.abilitazione)}</span>`);
-          if (p.iscrizione_albo) detailParts.push(`<span class="badge bg-primary">📋 ${escapeHtml(p.iscrizione_albo)}</span>`);
-          if (p.anni_esperienza) detailParts.push(`<span class="badge bg-success">⏱️ ${p.anni_esperienza} anni esperienza</span>`);
-          if (p.esperienza_servizi) detailParts.push(`<span class="badge bg-success">📂 ${escapeHtml(p.esperienza_servizi)}</span>`);
-          if (p.certificazione) detailParts.push(`<span class="badge bg-accent">🏅 ${escapeHtml(p.certificazione)}</span>`);
-          if (p.riferimento_normativo) detailParts.push(`<span class="badge bg-muted">⚖️ ${escapeHtml(p.riferimento_normativo)}</span>`);
+          const mkBadgeEdit = (field, val, icon, cls, label) => {
+            const bid = mkId2();
+            return `<span class="badge ${cls}" id="${bid}">${icon} ${escapeHtml(val)}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${pBase}.${field}','${escapeHtml(val)}','${label}',this,function(v){document.getElementById('${bid}').textContent='${icon} '+v;})" title="Modifica ${label}">✏️</button>`;
+          };
+          if (p.laurea) detailParts.push(mkBadgeEdit('laurea',p.laurea,'🎓','bg-info','Laurea'));
+          if (p.diploma) detailParts.push(mkBadgeEdit('diploma',p.diploma,'📜','bg-info','Diploma'));
+          if (p.abilitazione) detailParts.push(mkBadgeEdit('abilitazione',p.abilitazione,'✅','bg-warning','Abilitazione'));
+          if (p.iscrizione_albo) detailParts.push(mkBadgeEdit('iscrizione_albo',p.iscrizione_albo,'📋','bg-primary','Iscrizione Albo'));
+          if (p.anni_esperienza) {
+            const aId=mkId2();
+            detailParts.push(`<span class="badge bg-success" id="${aId}">⏱️ ${p.anni_esperienza} anni esperienza</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${pBase}.anni_esperienza','${p.anni_esperienza}','Anni Esperienza',this,function(v){document.getElementById('${aId}').textContent='⏱️ '+v+' anni esperienza';})" title="Modifica">✏️</button>`);
+          }
+          if (p.esperienza_servizi) detailParts.push(mkBadgeEdit('esperienza_servizi',p.esperienza_servizi,'📂','bg-success','Esperienza Servizi'));
+          if (p.certificazione) detailParts.push(mkBadgeEdit('certificazione',p.certificazione,'🏅','bg-accent','Certificazione'));
+          if (p.riferimento_normativo) detailParts.push(mkBadgeEdit('riferimento_normativo',p.riferimento_normativo,'⚖️','bg-muted','Riferimento Normativo'));
+          const ruoloId = mkId2();
           const reqCell = detailParts.length > 0
             ? `<div class="req-tags">${detailParts.join(' ')}</div>`
             : escapeHtml(p.requisiti || '—');
-          h += `<tr><td style="font-family:var(--font-m);font-weight:600">${p.numero||1}</td><td style="font-weight:500">${escapeHtml(p.ruolo||'—')}</td><td style="font-size:0.82rem">${reqCell}</td></tr>`;
+          h += `<tr>`;
+          h += `<td style="font-family:var(--font-m);font-weight:600">${p.numero||1}</td>`;
+          h += `<td style="font-weight:500"><span id="${ruoloId}">${escapeHtml(p.ruolo||'—')}</span>`+
+            `<button class="tbl-edit-btn" onclick="_openQuickEdit('${pBase}.ruolo','${escapeHtml(p.ruolo||'')}','Ruolo',this,function(v){document.getElementById('${ruoloId}').textContent=v;})" title="Modifica Ruolo">✏️</button></td>`;
+          h += `<td style="font-size:0.82rem">${reqCell}</td>`;
+          h += `</tr>`;
         });
         h += '</tbody></table></div>';
         const figWrap = document.createElement('div'); figWrap.className = 'result-grid'; figWrap.innerHTML = h;
@@ -1006,9 +1151,19 @@ function showResults(data, filename) {
       const rce = data.requisiti_capacita_economica_finanziaria;
       if (rce) {
         const eGrid = document.createElement('div'); eGrid.className = 'result-grid';
-        if (rce.descrizione) eGrid.innerHTML += `<div class="result-card full-width highlight"><div class="card-top"><div class="result-label"><span class="icon">📊</span>Descrizione</div></div><div class="result-value">${escapeHtml(rce.descrizione)}</div></div>`;
-        if (rce.importo_minimo_euro != null) eGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">💶</span>Importo Minimo</div></div><div class="result-value money">${fmtEuro(rce.importo_minimo_euro)}</div></div>`;
-        if (rce.note) eGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note</div></div><div class="result-value">${escapeHtml(rce.note)}</div></div>`;
+        const mkId3 = () => 're_'+Math.random().toString(36).slice(2,8);
+        if (rce.descrizione) {
+          const dId=mkId3();
+          eGrid.innerHTML += `<div class="result-card full-width highlight"><div class="card-top"><div class="result-label"><span class="icon">📊</span>Descrizione</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_economica_finanziaria.descrizione','${escapeHtml(rce.descrizione)}','Descrizione',this,function(v){document.getElementById('${dId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${dId}">${escapeHtml(rce.descrizione)}</div></div>`;
+        }
+        if (rce.importo_minimo_euro != null) {
+          const iId=mkId3();
+          eGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">💶</span>Importo Minimo</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_economica_finanziaria.importo_minimo_euro','${rce.importo_minimo_euro}','Importo Minimo',this,function(v){var n=parseFloat(v.replace(/[^\\d.,]/g,'').replace(',','.'));document.getElementById('${iId}').textContent=isNaN(n)?v:fmtEuro(n);})" title="Modifica">✏️</button></div></div><div class="result-value money" id="${iId}">${fmtEuro(rce.importo_minimo_euro)}</div></div>`;
+        }
+        if (rce.note) {
+          const nId=mkId3();
+          eGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('requisiti_capacita_economica_finanziaria.note','${escapeHtml(rce.note)}','Note',this,function(v){document.getElementById('${nId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${nId}">${escapeHtml(rce.note)}</div></div>`;
+        }
         if (eGrid.innerHTML) sec.appendChild(eGrid);
       }
       if (!rce || (!rce.descrizione && rce.importo_minimo_euro == null && !rce.note)) {
@@ -1023,17 +1178,33 @@ function showResults(data, filename) {
       const cv = data.criteri_valutazione_offerta_tecnica;
       const pGrid = document.createElement('div'); pGrid.className = 'result-grid';
       let hasContent = false;
+      const mkIdP = () => 'pv_'+Math.random().toString(36).slice(2,8);
       if (cv) {
-        if (cv.punteggio_totale != null) { pGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">🏆</span>Punteggio Totale</div></div><div class="result-value money">${cv.punteggio_totale}</div></div>`; hasContent=true; }
+        if (cv.punteggio_totale != null) {
+          const tId=mkIdP();
+          pGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">🏆</span>Punteggio Totale</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('criteri_valutazione_offerta_tecnica.punteggio_totale','${cv.punteggio_totale}','Punteggio Totale',this,function(v){document.getElementById('${tId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value money" id="${tId}">${cv.punteggio_totale}</div></div>`; hasContent=true;
+        }
         const rip = _get(cv, 'ripartizione');
         if (rip) {
-          if (rip.offerta_tecnica != null) { pGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">⭐</span>Punti Tecnica</div></div><div class="result-value" style="font-size:1.2rem;font-weight:600;color:var(--accent)">${rip.offerta_tecnica}</div></div>`; hasContent=true; }
-          if (rip.offerta_economica != null) { pGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">💰</span>Punti Economica</div></div><div class="result-value" style="font-size:1.2rem;font-weight:600;color:var(--ok)">${rip.offerta_economica}</div></div>`; hasContent=true; }
+          if (rip.offerta_tecnica != null) {
+            const ptId=mkIdP();
+            pGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">⭐</span>Punti Tecnica</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('criteri_valutazione_offerta_tecnica.ripartizione.offerta_tecnica','${rip.offerta_tecnica}','Punti Offerta Tecnica',this,function(v){document.getElementById('${ptId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" style="font-size:1.2rem;font-weight:600;color:var(--accent)" id="${ptId}">${rip.offerta_tecnica}</div></div>`; hasContent=true;
+          }
+          if (rip.offerta_economica != null) {
+            const peId=mkIdP();
+            pGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">💰</span>Punti Economica</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('criteri_valutazione_offerta_tecnica.ripartizione.offerta_economica','${rip.offerta_economica}','Punti Offerta Economica',this,function(v){document.getElementById('${peId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" style="font-size:1.2rem;font-weight:600;color:var(--ok)" id="${peId}">${rip.offerta_economica}</div></div>`; hasContent=true;
+          }
         }
         const met = _get(cv, 'metodo_valutazione');
         if (met) {
-          if (met.tecnica) { pGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📐</span>Metodo Tecnica</div></div><div class="result-value">${escapeHtml(met.tecnica)}</div></div>`; hasContent=true; }
-          if (met.economica) { pGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📐</span>Metodo Economica</div></div><div class="result-value">${escapeHtml(met.economica)}</div></div>`; hasContent=true; }
+          if (met.tecnica) {
+            const mtId=mkIdP();
+            pGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📐</span>Metodo Tecnica</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('criteri_valutazione_offerta_tecnica.metodo_valutazione.tecnica','${escapeHtml(met.tecnica)}','Metodo Tecnica',this,function(v){document.getElementById('${mtId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${mtId}">${escapeHtml(met.tecnica)}</div></div>`; hasContent=true;
+          }
+          if (met.economica) {
+            const meId=mkIdP();
+            pGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📐</span>Metodo Economica</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('criteri_valutazione_offerta_tecnica.metodo_valutazione.economica','${escapeHtml(met.economica)}','Metodo Economica',this,function(v){document.getElementById('${meId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${meId}">${escapeHtml(met.economica)}</div></div>`; hasContent=true;
+          }
         }
       }
       if (hasContent) sec.appendChild(pGrid);
@@ -1043,11 +1214,18 @@ function showResults(data, filename) {
     // ═══════ SEZIONE: Criteri Offerta Tecnica (Dettaglio) ═══════
     if (section.id === 'criteri-tecnici-dettaglio') {
       const ot = data.offerta_tecnica;
+      const mkIdCr = () => 'cr_'+Math.random().toString(36).slice(2,8);
       if (ot) {
         // Punteggio massimo e formato
         const otGrid = document.createElement('div'); otGrid.className = 'result-grid';
-        if (ot.punteggio_massimo != null) otGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">⭐</span>Punteggio Massimo</div></div><div class="result-value" style="font-size:1.1rem;font-weight:600;color:var(--accent)">${ot.punteggio_massimo}</div></div>`;
-        if (ot.formato_relazione) otGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📄</span>Formato Relazione</div></div><div class="result-value">${escapeHtml(ot.formato_relazione)}</div></div>`;
+        if (ot.punteggio_massimo != null) {
+          const pmId=mkIdCr();
+          otGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">⭐</span>Punteggio Massimo</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('offerta_tecnica.punteggio_massimo','${ot.punteggio_massimo}','Punteggio Massimo Tecnica',this,function(v){document.getElementById('${pmId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" style="font-size:1.1rem;font-weight:600;color:var(--accent)" id="${pmId}">${ot.punteggio_massimo}</div></div>`;
+        }
+        if (ot.formato_relazione) {
+          const frId=mkIdCr();
+          otGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📄</span>Formato Relazione</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('offerta_tecnica.formato_relazione','${escapeHtml(ot.formato_relazione)}','Formato Relazione',this,function(v){document.getElementById('${frId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${frId}">${escapeHtml(ot.formato_relazione)}</div></div>`;
+        }
         // Contenuto busta tecnica
         if (ot.contenuto_busta_tecnica && ot.contenuto_busta_tecnica.length > 0) {
           let bustaHtml = '<ol style="margin:0;padding-left:18px;line-height:1.6">';
@@ -1064,20 +1242,43 @@ function showResults(data, filename) {
         }
         if (otGrid.innerHTML) sec.appendChild(otGrid);
 
-        // Tabella criteri con sub-criteri
+        // Tabella criteri con sub-criteri — editabili
         const criteri = ot.criteri || [];
         if (criteri.length > 0) {
           let h = `<div class="result-card full-width"><table class="criteri-table"><thead><tr><th>Codice</th><th>Criterio</th><th>Punti</th><th>Disc.</th><th>Tab.</th><th>Tipo</th></tr></thead><tbody>`;
-          criteri.forEach(c => {
-            h += `<tr style="background:#fafaf8"><td style="font-family:var(--font-m);font-weight:600">${escapeHtml(c.codice||'—')}</td><td style="font-weight:500">${escapeHtml(c.nome||'—')}</td><td class="criteri-pts">${c.punteggio!=null?c.punteggio:'—'}</td><td style="font-family:var(--font-m)">${c.punteggio_discrezionale!=null?c.punteggio_discrezionale:'—'}</td><td style="font-family:var(--font-m)">${c.punteggio_tabellare!=null?c.punteggio_tabellare:'—'}</td><td><span class="tag cat">${escapeHtml(c.tipo||'—')}</span></td></tr>`;
-            // Dettaglio criterio principale
+          criteri.forEach((c, ci) => {
+            const baseCr = `offerta_tecnica.criteri.${ci}`;
+            const ckId=mkIdCr(), cnId=mkIdCr(), cpId=mkIdCr(), cdpId=mkIdCr(), ctpId=mkIdCr();
+            h += `<tr style="background:#fafaf8">`;
+            h += `<td style="font-family:var(--font-m);font-weight:600"><span id="${ckId}">${escapeHtml(c.codice||'—')}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseCr}.codice','${escapeHtml(c.codice||'')}','Codice Criterio',this,function(v){document.getElementById('${ckId}').textContent=v;})" title="Modifica">✏️</button></td>`;
+            h += `<td style="font-weight:500"><span id="${cnId}">${escapeHtml(c.nome||'—')}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseCr}.nome','${escapeHtml(c.nome||'')}','Nome Criterio',this,function(v){document.getElementById('${cnId}').textContent=v;})" title="Modifica">✏️</button></td>`;
+            h += `<td class="criteri-pts"><span id="${cpId}">${c.punteggio!=null?c.punteggio:'—'}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseCr}.punteggio','${c.punteggio||''}','Punteggio',this,function(v){var n=parseFloat(v);document.getElementById('${cpId}').textContent=isNaN(n)?v:n;})" title="Modifica">✏️</button></td>`;
+            h += `<td style="font-family:var(--font-m)"><span id="${cdpId}">${c.punteggio_discrezionale!=null?c.punteggio_discrezionale:'—'}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseCr}.punteggio_discrezionale','${c.punteggio_discrezionale||''}','Pt. Discrezionale',this,function(v){var n=parseFloat(v);document.getElementById('${cdpId}').textContent=isNaN(n)?v:n;})" title="Modifica">✏️</button></td>`;
+            h += `<td style="font-family:var(--font-m)"><span id="${ctpId}">${c.punteggio_tabellare!=null?c.punteggio_tabellare:'—'}</span>`+
+              `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseCr}.punteggio_tabellare','${c.punteggio_tabellare||''}','Pt. Tabellare',this,function(v){var n=parseFloat(v);document.getElementById('${ctpId}').textContent=isNaN(n)?v:n;})" title="Modifica">✏️</button></td>`;
+            h += `<td><span class="tag cat">${escapeHtml(c.tipo||'—')}</span></td></tr>`;
+            // Dettaglio criterio
             if (c.descrizione_dettagliata) {
               h += `<tr><td></td><td colspan="5" style="font-size:0.75rem;color:var(--ink-soft);padding:4px 12px 8px 20px;line-height:1.5;white-space:pre-line;border-bottom:1px solid var(--border)">${escapeHtml(c.descrizione_dettagliata)}</td></tr>`;
             }
             // Sub-criteri
-            (c.sub_criteri || []).forEach(sc => {
-              h += `<tr><td style="font-family:var(--font-m);padding-left:20px;color:var(--ink-soft)">${escapeHtml(sc.codice||'')}</td><td style="font-size:0.78rem;color:var(--ink-soft);padding-left:20px">${escapeHtml(sc.descrizione||'—')}</td><td style="font-family:var(--font-m);color:var(--accent)">${sc.punteggio!=null?sc.punteggio:'—'}</td><td style="font-family:var(--font-m);color:var(--ink-soft)">${sc.punteggio_discrezionale!=null?sc.punteggio_discrezionale:'—'}</td><td style="font-family:var(--font-m);color:var(--ink-soft)">${sc.punteggio_tabellare!=null?sc.punteggio_tabellare:'—'}</td><td style="font-size:0.72rem">${escapeHtml(sc.tipo||'')}</td></tr>`;
-              // Dettaglio sub-criterio
+            (c.sub_criteri || []).forEach((sc, sci) => {
+              const baseSc = `${baseCr}.sub_criteri.${sci}`;
+              const sckId=mkIdCr(), scnId=mkIdCr(), scpId=mkIdCr();
+              h += `<tr>`;
+              h += `<td style="font-family:var(--font-m);padding-left:20px;color:var(--ink-soft)"><span id="${sckId}">${escapeHtml(sc.codice||'')}</span>`+
+                `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseSc}.codice','${escapeHtml(sc.codice||'')}','Codice Sub',this,function(v){document.getElementById('${sckId}').textContent=v;})" title="Modifica">✏️</button></td>`;
+              h += `<td style="font-size:0.78rem;color:var(--ink-soft);padding-left:20px"><span id="${scnId}">${escapeHtml(sc.descrizione||'—')}</span>`+
+                `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseSc}.descrizione','${escapeHtml(sc.descrizione||'')}','Descrizione Sub',this,function(v){document.getElementById('${scnId}').textContent=v;})" title="Modifica">✏️</button></td>`;
+              h += `<td style="font-family:var(--font-m);color:var(--accent)"><span id="${scpId}">${sc.punteggio!=null?sc.punteggio:'—'}</span>`+
+                `<button class="tbl-edit-btn" onclick="_openQuickEdit('${baseSc}.punteggio','${sc.punteggio||''}','Pt. Sub',this,function(v){var n=parseFloat(v);document.getElementById('${scpId}').textContent=isNaN(n)?v:n;})" title="Modifica">✏️</button></td>`;
+              h += `<td style="font-family:var(--font-m);color:var(--ink-soft)">${sc.punteggio_discrezionale!=null?sc.punteggio_discrezionale:'—'}</td>`;
+              h += `<td style="font-family:var(--font-m);color:var(--ink-soft)">${sc.punteggio_tabellare!=null?sc.punteggio_tabellare:'—'}</td>`;
+              h += `<td style="font-size:0.72rem">${escapeHtml(sc.tipo||'')}</td></tr>`;
               if (sc.descrizione_dettagliata) {
                 h += `<tr><td></td><td colspan="5" style="font-size:0.72rem;color:var(--ink-soft);padding:2px 12px 8px 28px;line-height:1.45;white-space:pre-line;border-bottom:1px solid var(--border)">${escapeHtml(sc.descrizione_dettagliata)}</td></tr>`;
               }
@@ -1100,9 +1301,19 @@ function showResults(data, filename) {
       const oe = data.offerta_economica;
       if (oe) {
         const oeGrid = document.createElement('div'); oeGrid.className = 'result-grid';
-        if (oe.punteggio_massimo != null) oeGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">💰</span>Punteggio Massimo</div></div><div class="result-value" style="font-size:1.1rem;font-weight:600;color:var(--ok)">${oe.punteggio_massimo}</div></div>`;
-        if (oe.modalita) oeGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Modalità</div></div><div class="result-value">${escapeHtml(oe.modalita)}</div></div>`;
-        if (oe.note) oeGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note</div></div><div class="result-value">${escapeHtml(oe.note)}</div></div>`;
+        const mkId4 = () => 'oe_'+Math.random().toString(36).slice(2,8);
+        if (oe.punteggio_massimo != null) {
+          const pId=mkId4();
+          oeGrid.innerHTML += `<div class="result-card highlight"><div class="card-top"><div class="result-label"><span class="icon">💰</span>Punteggio Massimo</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('offerta_economica.punteggio_massimo','${oe.punteggio_massimo}','Punteggio Massimo',this,function(v){document.getElementById('${pId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" style="font-size:1.1rem;font-weight:600;color:var(--ok)" id="${pId}">${oe.punteggio_massimo}</div></div>`;
+        }
+        if (oe.modalita) {
+          const mId=mkId4();
+          oeGrid.innerHTML += `<div class="result-card"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Modalità</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('offerta_economica.modalita','${escapeHtml(oe.modalita)}','Modalità',this,function(v){document.getElementById('${mId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${mId}">${escapeHtml(oe.modalita)}</div></div>`;
+        }
+        if (oe.note) {
+          const nId=mkId4();
+          oeGrid.innerHTML += `<div class="result-card full-width"><div class="card-top"><div class="result-label"><span class="icon">📝</span>Note</div><div class="card-actions"><button class="card-act" onclick="_openQuickEdit('offerta_economica.note','${escapeHtml(oe.note)}','Note',this,function(v){document.getElementById('${nId}').textContent=v;})" title="Modifica">✏️</button></div></div><div class="result-value" id="${nId}">${escapeHtml(oe.note)}</div></div>`;
+        }
         if (oeGrid.innerHTML) sec.appendChild(oeGrid);
       }
       if (!oe || (!oe.punteggio_massimo && !oe.modalita && !oe.note)) {
@@ -1116,7 +1327,17 @@ function showResults(data, filename) {
     if (section.id === 'documentazione') {
       const docs = data.documentazione_amministrativa_richiesta || [];
       if (docs.length > 0) {
-        const docsHtml = `<div class="result-card full-width"><div class="result-label" style="margin-bottom:8px"><span class="icon">📁</span>Documenti Richiesti (${docs.length})</div><div style="display:flex;flex-direction:column;gap:4px">${docs.map((d,i) => `<div class="note-item" style="background:#f8f9fa;border-color:var(--border);color:var(--ink)"><span style="font-family:var(--font-m);font-size:0.72rem;color:var(--ink-soft);width:24px">${i+1}.</span>${escapeHtml(d)}</div>`).join('')}</div></div>`;
+        let docsInner = `<div class="result-label" style="margin-bottom:8px"><span class="icon">📁</span>Documenti Richiesti (${docs.length})</div><div style="display:flex;flex-direction:column;gap:4px">`;
+        docs.forEach((d, di) => {
+          const dId = 'doc_'+Math.random().toString(36).slice(2,8);
+          docsInner += `<div class="note-item" style="background:#f8f9fa;border-color:var(--border);color:var(--ink)">`+
+            `<span style="font-family:var(--font-m);font-size:0.72rem;color:var(--ink-soft);width:24px">${di+1}.</span>`+
+            `<span id="${dId}">${escapeHtml(d)}</span>`+
+            `<button class="tbl-edit-btn" style="margin-left:auto;opacity:0.4" onclick="_openQuickEdit('documentazione_amministrativa_richiesta.${di}','${escapeHtml(d)}','Documento ${di+1}',this,function(v){document.getElementById('${dId}').textContent=v;})" title="Modifica">✏️</button>`+
+            `</div>`;
+        });
+        docsInner += '</div>';
+        const docsHtml = `<div class="result-card full-width">${docsInner}</div>`;
         const docsWrap = document.createElement('div'); docsWrap.className = 'result-grid'; docsWrap.innerHTML = docsHtml;
         sec.appendChild(docsWrap);
       } else {
@@ -1207,6 +1428,76 @@ function onSnippetSelect(field){
   if(sel&&sel.length>1){ const inp=document.getElementById(`ei-${field}`); if(inp) inp.value=sel; }
 }
 function cancelEdit(field){ document.getElementById(`edit-${field}`).classList.remove('open'); }
+
+// ═══════════════════════════════════════════════════════════════
+// QUICK EDIT — per celle di tabelle custom-rendered
+// ═══════════════════════════════════════════════════════════════
+let _qeUpdateFn = null, _qePath = null, _qeOrigVal = null;
+
+function _openQuickEdit(path, origVal, label, triggerEl, updateFn) {
+  _qePath = path; _qeOrigVal = origVal; _qeUpdateFn = updateFn;
+  document.getElementById('qe-label').textContent = label;
+  const inp = document.getElementById('qe-input');
+  inp.value = (origVal != null && origVal !== '—') ? String(origVal) : '';
+  const box = document.getElementById('quick-edit-box');
+  box.classList.add('visible');
+  const rect = triggerEl.getBoundingClientRect();
+  const bw = 340;
+  let left = rect.left + window.scrollX;
+  let top = rect.bottom + window.scrollY + 6;
+  if (left + bw > window.innerWidth - 16) left = window.innerWidth - bw - 16;
+  if (top > window.innerHeight + window.scrollY - 100) top = rect.top + window.scrollY - 100;
+  box.style.left = left + 'px';
+  box.style.top = top + 'px';
+  setTimeout(() => inp.select(), 50);
+  setTimeout(() => document.addEventListener('mousedown', _handleQEOutside, {once: true}), 120);
+}
+
+function _handleQEOutside(e) {
+  const box = document.getElementById('quick-edit-box');
+  if (box && !box.contains(e.target)) { _closeQuickEdit(); }
+  else { setTimeout(() => document.addEventListener('mousedown', _handleQEOutside, {once: true}), 120); }
+}
+
+function _closeQuickEdit() {
+  document.getElementById('quick-edit-box').classList.remove('visible');
+  _qePath = null; _qeUpdateFn = null; _qeOrigVal = null;
+  document.removeEventListener('mousedown', _handleQEOutside);
+}
+
+async function _saveQuickEdit() {
+  const corrected = document.getElementById('qe-input').value.trim();
+  if (!corrected) { showToast('Inserisci un valore', 'error'); return; }
+  const inp = document.getElementById('qe-input');
+  inp.disabled = true;
+  try {
+    await fetch(`${API}/api/feedback`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        doc_id: currentDocId, field: _qePath,
+        original: String(_qeOrigVal ?? ''), corrected,
+        text_snippet: (currentSnippets[_qePath] || '').slice(0, 2000)
+      })
+    });
+    if (_qeUpdateFn) _qeUpdateFn(corrected);
+    _closeQuickEdit();
+    showToast('✅ Correzione salvata', 'ok');
+    loadStats(); loadLearningProgress();
+  } catch(e) { showToast('Errore: ' + e.message, 'error'); }
+  finally { inp.disabled = false; }
+}
+
+// Build a DOM cell that is editable via _openQuickEdit.
+// Returns an HTML string with a small ✏️ button.
+function _editableCell(path, value, displayHtml, label, fmtFn) {
+  const sid = 'qc_' + Math.random().toString(36).slice(2, 8);
+  const displayVal = displayHtml != null ? displayHtml : (value != null ? escapeHtml(String(value)) : '—');
+  return `<span id="${sid}">${displayVal}</span>`+
+    `<button class="tbl-edit-btn" onclick="_openQuickEdit('${escapeHtml(path)}','${escapeHtml(String(value??''))}','${escapeHtml(label)}',this,function(v){
+      const el=document.getElementById('${sid}');
+      if(el) el.textContent=${fmtFn?'('+fmtFn+')(v)':'v'};
+    })" title="Modifica ${escapeHtml(label)}">✏️</button>`;
+}
 
 async function saveEdit(field) {
   const inp=document.getElementById(`ei-${field}`);

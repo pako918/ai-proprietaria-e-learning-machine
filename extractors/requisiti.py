@@ -355,7 +355,7 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                         for p in parts:
                             if p in codes_in_row or not p:
                                 continue
-                            if re.match(r"^€?\s*[\d.,]+(?:\s*€)?$", p) and len(p) > 4:
+                            if re.match(r"^(?:euro\s+)?€?\s*[\d.,]+(?:\s*€)?$", p, re.IGNORECASE) and len(p) > 4:
                                 v = _parse_euro(p)
                                 if v and v > 10000:
                                     imp_cell = v
@@ -363,7 +363,7 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                                     grado_cell = v
                             elif re.match(r"^\d+[.,]\d{1,2}$", p):
                                 grado_cell = float(p.replace(",", "."))
-                            elif len(p) > 10 and not re.match(r"^[\d.,€\s]+$", p):
+                            elif len(p) > 10 and not re.match(r"^(?:euro\s+)?[\d.,€\s]+$", p, re.IGNORECASE):
                                 desc_cell = (desc_cell + " " + p).strip() if desc_cell else p
                         for code in codes_in_row:
                             code_norm = code if "." in code else code[:len(code)-2] + "." + code[-2:]

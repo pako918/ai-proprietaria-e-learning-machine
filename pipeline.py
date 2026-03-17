@@ -478,10 +478,13 @@ class Pipeline:
                 "INSERT INTO feedback_log (doc_id, field, original, corrected) VALUES (?,?,?,?)",
                 (doc_id, field, original, corrected),
             )
+            # Salva solo il contesto testuale e il campo sbagliato.
+            # Il valore corretto NON viene memorizzato come etichetta ML per
+            # evitare che il modello impari a restituire risposte memorizzate.
             c.execute(
                 "INSERT INTO training_samples (field, text_snippet, correct_value, wrong_value, source) "
                 "VALUES (?,?,?,?,?)",
-                (field, training_snippet[:2000], corrected, original, "correction"),
+                (field, training_snippet[:2000], "", original, "correction"),
             )
             row = c.execute("SELECT corrected_json FROM documents WHERE id=?", (doc_id,)).fetchone()
             cd = json.loads(row[0]) if row and row[0] else {}
@@ -491,14 +494,9 @@ class Pipeline:
                 (json.dumps(cd, ensure_ascii=False), doc_id),
             )
 
-        # Feed to ML Engine
-        try:
-            ml.add_correction(
-                field, training_snippet, corrected,
-                wrong_value=original, doc_id=doc_id
-            )
-        except Exception:
-            pass
+        # ML Engine: non si alimenta con valori corretti per non memorizzare
+        # risposte specifiche. Il motore ML non viene più addestrato sulle
+        # correzioni — impara WHERE trovare i dati, non WHAT restituire.
 
         # Feed to Smart Learner
         smart_learning_result = None

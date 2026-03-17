@@ -110,14 +110,22 @@ class SelfLearner:
     # ── 4. EVOLVE: Aggiorna direttive ────────────────────────────
 
     def _evolve_directive(self, field: str):
-        """Genera una nuova direttiva basata sulle correzioni accumulate."""
+        """Genera una nuova direttiva basata sulle correzioni accumulate.
+
+        PRINCIPIO: la direttiva impara DOVE trovare il valore nel documento
+        (sezione, etichetta precedente, struttura, pattern testuale), non
+        QUALE valore aspettarsi. I valori specifici sono validi solo per il
+        documento da cui provengono e non vanno inclusi come esempi fissi.
+        """
         corrections = self._correction_buffer.get(field, [])
         if not corrections or not self.llm.is_available():
             return
 
-        corrections_text = "\n".join(
-            f"- Sbagliato: {c['wrong']} → Corretto: {c['correct']} "
-            f"(contesto: {c['context'][:100]})"
+        # Esporta solo il CONTESTO strutturale, non i valori specifici.
+        # Il sistema impara il pattern "dove cercare", non "cosa cercare".
+        context_examples = "\n".join(
+            f"- Contesto rilevante nel documento:\n"
+            f"  ...{c['context'][:200]}..."
             for c in corrections[-10:]
         )
         current_directive = (
@@ -125,15 +133,23 @@ class SelfLearner:
         )
 
         prompt = (
-            f'Analizza queste correzioni per il campo "{field}" '
-            f"e genera una direttiva migliorata.\n\n"
+            f'Analizza questi contesti documentali per il campo "{field}" '
+            f"e genera una direttiva migliorata per l'estrazione.\n\n"
             f"Direttiva attuale:\n{current_directive}\n\n"
-            f"Correzioni recenti:\n{corrections_text}\n\n"
+            f"Contesti documentali in cui il campo era presente "
+            f"(non i valori specifici, che cambiano per ogni documento):\n"
+            f"{context_examples}\n\n"
             f"Genera una nuova direttiva in Markdown che:\n"
-            f"1. Descriva come estrarre correttamente il campo\n"
-            f"2. Includa i pattern/keyword da cercare\n"
-            f"3. Elenca gli errori comuni da evitare\n"
-            f"4. Fornisca esempi di valori corretti\n\n"
+            f"1. Descriva in quale sezione del documento si trova tipicamente "
+            f"il campo\n"
+            f"2. Indichi le etichette testuali o i titoli che lo precedono\n"
+            f"3. Descriva la struttura (tabella, paragrafo, intestazione) "
+            f"che contiene il dato\n"
+            f"4. Fornisca pattern testuali o numerici per identificare "
+            f"il valore (es. formato, unità di misura)\n"
+            f"5. Elenchi errori di localizzazione da evitare\n\n"
+            f"IMPORTANTE: non inserire valori specifici come esempi — "
+            f"ogni documento ha i propri valori.\n\n"
             f"Rispondi SOLO con la direttiva in Markdown."
         )
         new_directive = self.llm.generate(prompt, temperature=0.2)

@@ -460,18 +460,18 @@ class ValueValidator:
                     result["is_valid"] = False
                     result["confidence"] = 0.3
 
-        # Suggerimento: valore più comune se questo è anomalo
-        if not result["is_valid"] and common:
-            top_value = max(common, key=common.get)
-            if top_value != val_str:
-                result["suggestion"] = top_value
+        # NON proponiamo substituzioni con valori storici (ogni PDF è autonomo).
+        # La validazione segnala solo anomalie strutturali/numeriche senza
+        # suggerire un valore specifico visto in altri documenti.
 
-        # Alta confidenza se il valore è tra quelli già visti
+        # Alta confidenza se il formato del valore è coerente con lo storico
+        # (usa la frequenza come proxy di coerenza di formato, non di valore)
         if val_str in common:
             freq = common[val_str]
             total_seen = sum(common.values())
+            # Boost moderato: conferma solo che il formato è plausibile
             result["confidence"] = max(result["confidence"],
-                                       0.6 + 0.3 * (freq / total_seen))
+                                       min(0.75, 0.5 + 0.2 * (freq / total_seen)))
 
         return result
 
@@ -914,9 +914,13 @@ class DocSimilarity:
         for r in rows:
             field = r[1]
             strategies[field].append({
-                "value_hint": r[2], "method": r[3],
+                # NON trasmettiamo il valore (value_hint) ai documenti futuri:
+                # ogni PDF è indipendente. Passiamo solo il contesto strutturale
+                # (prefix_context, suffix_context) per capire DOVE cercare.
+                "method": r[3],
                 "confidence": r[4] * sim_map.get(r[0], 0.5),
                 "prefix_context": r[5],
+                "suffix_context": r[6] if len(r) > 6 else None,
                 "source_doc": r[0],
             })
 
@@ -1153,6 +1157,8 @@ class AdaptiveLearner:
                 candidates[field].append((val, conf, "auto_rule"))
 
         # 2. Strategie da documenti simili (solo per campi ancora vuoti)
+        # Usiamo SOLO il contesto strutturale (prefix_context) per trovare
+        # la posizione nel documento corrente; non trasferiamo il valore.
         still_empty = [f for f in empty_fields if f not in candidates]
         if still_empty:
             similar = self.doc_sim.find_similar(text, result,
@@ -1163,11 +1169,10 @@ class AdaptiveLearner:
                 )
                 for field, strats in strategies.items():
                     for strat in strats[:2]:
-                        # Usa il contesto del documento simile per
-                        # estrarre dal documento corrente
+                        # Usa solo il prefisso contestuale per localizzare
+                        # il valore nel documento corrente (non il valore hint)
                         value = self._try_extract_with_context(
-                            text, strat.get("prefix_context", ""),
-                            strat.get("value_hint", "")
+                            text, strat.get("prefix_context", ""), ""
                         )
                         if value:
                             candidates[field].append(
@@ -1410,7 +1415,13 @@ class AdaptiveLearner:
 
     def _validate_and_autocorrect(self, result: dict, text: str,
                                   doc_id: str, methods: dict):
-        """Valida i valori estratti e corregge anomalie evidenti."""
+        """Valida i valori estratti e segnala anomalie strutturali/numeriche.
+
+        NON sostituisce mai un valore con uno visto in altri documenti:
+        ogni PDF è indipendente. La validazione serve solo a rilevare
+        valori con formato palesemente errato (es. importo di €0 quando
+        la struttura del documento indica che dovrebbe esserci un numero).
+        """
         for field, value in list(result.items()):
             if field.startswith("_") or value is None:
                 continue
@@ -1419,31 +1430,15 @@ class AdaptiveLearner:
 
             validation = self.validator.validate_value(field, str(value))
 
-            if not validation["is_valid"] and validation["suggestion"]:
-                # Controlla che il suggerimento sia nel testo
-                suggestion = validation["suggestion"]
-                if (suggestion.lower() in text.lower() and
-                        validation["confidence"] < 0.3):
-                    # Auto-correzione
-                    old_val = result[field]
-                    result[field] = suggestion
-                    methods[field] = "auto_corrected"
-
-                    with get_connection() as conn:
-                        conn.execute(
-                            "INSERT INTO auto_corrections_log "
-                            "(doc_id, field, original_value, corrected_value, "
-                            "reason, confidence) VALUES (?,?,?,?,?,?)",
-                            (doc_id, field, str(old_val), suggestion,
-                             "; ".join(validation["anomalies"]),
-                             validation["confidence"])
-                        )
-
-                    logger.info(
-                        "Auto-correzione '%s': '%s' → '%s' (%s)",
-                        field, str(old_val)[:50], suggestion[:50],
-                        validation["anomalies"][0][:80]
-                    )
+            # Logga l'anomalia per diagnostica, ma NON sostituire il valore
+            if not validation["is_valid"] and validation.get("anomalies"):
+                logger.debug(
+                    "Anomalia rilevata '%s'='%s': %s (confidence=%.2f) — "
+                    "nessuna auto-correzione: ogni documento è indipendente",
+                    field, str(value)[:60],
+                    validation["anomalies"][0][:80],
+                    validation["confidence"]
+                )
 
     def _try_extract_with_context(self, text: str, prefix: str,
                                   value_hint: str) -> Optional[str]:
@@ -1487,19 +1482,13 @@ class AdaptiveLearner:
 
     def _estimate_confidence(self, field: str, value: str,
                              method: str) -> float:
-        """Stima la confidenza di un'estrazione basandosi su metodo e storico."""
+        """Stima la confidenza di un'estrazione basandosi su metodo e storico.
+
+        NON usa la frequenza del valore specifico: ogni PDF è indipendente
+        e un valore già visto in altri documenti non è più affidabile.
+        La confidenza si basa esclusivamente sul metodo usato per estrarre.
+        """
         base = METHOD_WEIGHTS.get(method, 0.5)
-
-        # Bonus se il valore è già stato visto per questo campo
-        history = self.memory.get_field_history(field, limit=20)
-        val_str = str(value).lower().strip()
-        seen_count = sum(
-            1 for h in history
-            if h["value"].lower().strip() == val_str
-        )
-        if seen_count > 0:
-            base = min(0.95, base + 0.1 * seen_count)
-
         return round(base, 3)
 
     def _trigger_rule_generation(self):

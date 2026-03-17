@@ -945,16 +945,10 @@ class SmartLearner:
         # 2. Segna fallimento pattern errati
         self._mark_failed_patterns(field, wrong_value)
 
-        # 3. Auto-training check
-        field_to_train = self.auto_trainer.record_correction(field)
-        if field_to_train:
-            response["auto_train_triggered"] = True
-            try:
-                train_result = self.auto_trainer.execute_auto_train(field_to_train)
-                response["auto_train_result"] = train_result
-            except Exception as e:
-                logger.warning("Auto-training fallito per '%s': %s", field, e)
-                response["auto_train_result"] = {"status": "error", "message": str(e)}
+        # 3. Auto-training ML disabilitato: il FieldModel usa i valori corretti
+        # come etichette di classificazione e li restituirebbe come previsioni
+        # per documenti futuri. Si apprende solo DOVE si trova il dato (pattern
+        # strutturali), non QUALE valore restituire.
 
         return response
 

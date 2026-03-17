@@ -879,37 +879,16 @@ class MLEngine:
         return result, ml_methods
 
     def enhance_result(self, result: dict, text: str) -> Tuple[dict, dict]:
-        """Migliora i risultati di estrazione con ML.
+        """Non inietta valori ML nel risultato.
 
-        - Campi vuoti: ML li riempie
-        - Campi esistenti con bassa confidenza: ML può sovrascrivere
-          se il modello è molto sicuro (>85%)
-
-        Questo è il cuore dell'integrazione ML nel pipeline:
-        le regole estraggono, il ML migliora.
+        Il motore ML memorizza i valori corretti come etichette di
+        classificazione. Restituire quelle etichette equivale a
+        ripetere risposte memorizzate per documenti diversi.
+        Le correzioni devono solo affinare i pattern di estrazione
+        (WHERE trovare il dato), non impostare il valore (WHAT restituire).
         """
-        ml_methods = {}
-
-        for field, model in self.models.items():
-            if field.startswith('_'):
-                continue
-
-            value, confidence = model.predict(text[:5000])
-            if not value or confidence < self.confidence_threshold:
-                continue
-
-            current = result.get(field)
-
-            if current in [None, "", 0]:
-                # Campo vuoto → ML lo riempie
-                result[field] = value
-                ml_methods[field] = f"ml({confidence:.0%})"
-            elif confidence > ML_OVERRIDE_THRESHOLD and str(current) != str(value):
-                # ML molto sicuro e in disaccordo → sovrascrive
-                result[field] = value
-                ml_methods[field] = f"ml_override({confidence:.0%})"
-
-        return result, ml_methods
+        # Ritorna il risultato invariato: nessuna iniezione di valori memorizzati
+        return result, {}
 
     # ═══════════════════════════════════════════════════════════════
     # MONITORING — qualità dati e modelli

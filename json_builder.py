@@ -140,6 +140,19 @@ def build_output(nested: dict) -> dict:
                 for p in lotto.get("prestazioni", [])
                 if isinstance(p, dict)
             ],
+            categorie=[
+                CategoriaServizi(
+                    codice=cat.get("id_categoria"),
+                    descrizione=cat.get("descrizione"),
+                    importo_complessivo_lavori_progettati_euro=_parse_float(
+                        cat.get("importo_opera") or cat.get("importo_minimo")
+                    ),
+                    grado_complessita=_parse_float(cat.get("grado_complessita")),
+                    lotto=lotto.get("numero", 1),
+                )
+                for cat in lotto.get("categorie_opere", [])
+                if isinstance(cat, dict)
+            ],
         ))
 
     # Tipologia: determiniamo dal tipo_procedura
@@ -280,6 +293,7 @@ def build_output(nested: dict) -> dict:
                     codice=cat.get("categoria"),
                     descrizione=cat.get("descrizione"),
                     importo_complessivo_lavori_progettati_euro=_parse_float(cat.get("importo_minimo")),
+                    grado_complessita=_parse_float(cat.get("grado_complessita")),
                 ))
         servizi_punta = None
         if _has_srv or categorie_srv:

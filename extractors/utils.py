@@ -9,6 +9,8 @@ def _parse_euro(raw: str) -> float | None:
     if not raw:
         return None
     s = raw.strip().replace("€", "").replace("\u20ac", "").replace("Ç", "").strip()
+    # Rimuove il prefisso letterale 'euro' (es: 'euro 184.430,11')
+    s = re.sub(r"^euro\s*", "", s, flags=re.IGNORECASE)
     s = s.lstrip(".")
     s = s.rstrip(".,;: ")
     s = re.sub(r"\s+", "", s)

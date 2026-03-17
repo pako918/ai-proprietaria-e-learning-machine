@@ -20,6 +20,15 @@ class PrestazioneLotto(BaseModel):
     importo: Optional[float] = None
 
 
+class CategoriaServizi(BaseModel):
+    """Categoria di servizi con importo."""
+    codice: Optional[str] = None
+    descrizione: Optional[str] = None
+    importo_complessivo_lavori_progettati_euro: Optional[float] = None
+    grado_complessita: Optional[float] = None
+    lotto: Optional[int] = None  # riferimento al lotto specifico, se applicabile
+
+
 class LottoImporto(BaseModel):
     """Singolo lotto con importi e quote."""
     lotto: int
@@ -28,6 +37,7 @@ class LottoImporto(BaseModel):
     quota_fissa_65_percento_euro: Optional[float] = None
     quota_ribassabile_35_percento_euro: Optional[float] = None
     prestazioni: List[PrestazioneLotto] = Field(default_factory=list)
+    categorie: List[CategoriaServizi] = Field(default_factory=list)
 
 
 class DescrizioneLavori(BaseModel):
@@ -80,11 +90,7 @@ class RequisitiIdoneitaProfessionale(BaseModel):
     note: Optional[str] = None
 
 
-class CategoriaServizi(BaseModel):
-    """Categoria di servizi con importo."""
-    codice: Optional[str] = None
-    descrizione: Optional[str] = None
-    importo_complessivo_lavori_progettati_euro: Optional[float] = None
+# CategoriaServizi is defined earlier (before LottoImporto) so it can be used by both LottoImporto and ServiziDiPunta
 
 
 class ServiziDiPunta(BaseModel):
