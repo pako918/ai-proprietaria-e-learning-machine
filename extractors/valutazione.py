@@ -38,9 +38,13 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
 
     crit_section = _section_text(
         text,
-        ["CRITERIO DI AGGIUDICAZIONE", "CRITERI DI VALUTAZIONE", "18. CRITERIO", "5.1 Criteri"],
+        [
+            "Criteri di valutazione dell\u2019offerta tecnica, temporale",
+            "Criteri di valutazione dell'offerta tecnica, temporale",
+            "CRITERIO DI AGGIUDICAZIONE", "CRITERI DI VALUTAZIONE", "18. CRITERIO", "5.1 Criteri",
+        ],
         ["SVOLGIMENTO DELLE OPERAZIONI DI GARA", "23.", "24.", "25.", "19."],
-        max_len=20000,
+        max_len=25000,
     )
 
     ot = cv["offerta_tecnica"]
@@ -48,12 +52,15 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
 
     # ── Punteggio offerta tecnica ────────────────────────────────────────
     pt_patterns = [
+        r"[Ee]lementi\s+di\s+natura\s+qualitativa[^\d]{0,80}(\d{1,3})",
         r"offerta\s+tecnica\s*(?:[:=]|\(|punti\s+)?\s*(?:max\.?\s*|massimo\s+)?(?:punti\s+)?(\d{1,3})\s*(?:punti|pt|punto|/100|\))",
         r"(?:Punteggio\s+)?[Oo]fferta\s+tecnica[^\d]{0,30}(\d{1,3})\s*(?:punti|pt|/)",
         r"[Oo]fferta\s+[Tt]ecnica\s+(\d{1,3})\s*(?:$|\n)",
-        r"(?:tecnic\w+|qualit[àa])\s*[:=]\s*(?:max\.?\s*)?(?:punti\s+)?(\d{1,3})",
-        r"(\d{1,3})\s*punti\s*[-–]\s*offerta\s+tecnica",        r"(\d{1,3})\s*punt[io]\s+(?:per\s+)?(?:l['\u2019]\s*)?offerta\s+tecnica",
-        r"(?:Punteggio\s+)?[Oo]fferta\s+tecnica\s*[:=]\s*(\d{1,3})\b",    ]
+        r"(?:tecnic\w+|qualit[\u00e0a])\s*[:=]\s*(?:max\.?\s*)?(?:punti\s+)?(\d{1,3})",
+        r"(\d{1,3})\s*punti\s*[-\u2013]\s*offerta\s+tecnica",
+        r"(\d{1,3})\s*punt[io]\s+(?:per\s+)?(?:l['\u2019]\s*)?offerta\s+tecnica",
+        r"(?:Punteggio\s+)?[Oo]fferta\s+tecnica\s*[:=]\s*(\d{1,3})\b",
+    ]
     for pt_pat in pt_patterns:
         m_pt = re.search(pt_pat, crit_section or text, re.IGNORECASE | re.MULTILINE)
         if m_pt:
@@ -64,12 +71,15 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
 
     # ── Punteggio offerta economica ──────────────────────────────────────
     pe_patterns = [
+        r"[Ee]lementi\s+di\s+natura\s+economica[^\d\n]{0,80}(\d{1,3})",
         r"offerta\s+economica\s*(?:[:=]|\(|punti\s+)?\s*(?:max\.?\s*|massimo\s+)?(?:punti\s+)?(\d{1,3})\s*(?:punti|pt|punto|/100|\))",
         r"(?:Punteggio\s+)?[Oo]fferta\s+economica[^\d]{0,30}(\d{1,3})\s*(?:punti|pt|/)",
         r"[Oo]fferta\s+[Ee]conomica\s+(\d{1,3})\s*(?:$|\n)",
         r"(?:economic\w+|prezzo)\s*[:=]\s*(?:max\.?\s*)?(?:punti\s+)?(\d{1,3})",
-        r"(\d{1,3})\s*punti\s*[-–]\s*offerta\s+economica",        r"(\d{1,3})\s*punt[io]\s+(?:per\s+)?(?:l['\u2019]\s*)?offerta\s+economica",
-        r"(?:Punteggio\s+)?[Oo]fferta\s+economica\s*[:=]\s*(\d{1,3})\b",    ]
+        r"(\d{1,3})\s*punti\s*[-\u2013]\s*offerta\s+economica",
+        r"(\d{1,3})\s*punt[io]\s+(?:per\s+)?(?:l['\u2019]\s*)?offerta\s+economica",
+        r"(?:Punteggio\s+)?[Oo]fferta\s+economica\s*[:=]\s*(\d{1,3})\b",
+    ]
     for pe_pat in pe_patterns:
         m_pe = re.search(pe_pat, crit_section or text, re.IGNORECASE)
         if m_pe:
@@ -103,7 +113,7 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
 
     # ── Sub-criteri valutazione ──────────────────────────────────────────
     sub_criteri = re.findall(
-        r"(?:^|\n)\s*([A-Z](?:\.\d{1,2})?|\d{1,2}(?:\.\d{1,2})?)\s*[.\-\)\s]\s*"
+        r"(?:^|\n)\s*([A-Z]\d+(?:\.\d+)?|[A-Z](?:\.\d{1,2})?|\d{1,2}(?:\.\d{1,2})?)\s*[.\-\)|\s]\s*"
         r"(.{10,200}?)\s+"
         r"(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:punti|pt|punto|\s+\d|\n|$)",
         crit_section,
@@ -111,7 +121,7 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
     )
 
     compact_criteri = re.findall(
-        r"(?:^|\n)\s*([A-Z](?:\.\d{1,2})?)\s+(\d{1,3})\s*$",
+        r"(?:^|\n)\s*([A-Z](?:\d+)?(?:\.\d{1,2})?)\s+(\d{1,3})\s*$",
         crit_section,
         re.MULTILINE,
     )
@@ -131,10 +141,10 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
             cells = [c for c in cells if c]
             if not cells:
                 continue
-            codes = [c for c in cells if re.match(r"^[A-Z](?:\.\d{1,2})?$", c)]
+            codes = [c for c in cells if re.match(r"^[A-Z](?:\d+)?(?:\.\d{1,2})?$", c)]
             numbers = [c for c in cells if re.match(r"^\d{1,3}$", c) and 1 <= int(c) <= 100]
             descs = [c for c in cells if len(c) > 5 and not re.match(r"^[\d,.]+$", c)
-                     and not re.match(r"^[A-Z](?:\.\d)?$", c)]
+                     and not re.match(r"^[A-Z](?:\d+)?(?:\.\d)?$", c)]
             for code in codes:
                 if code in existing_codes:
                     continue
@@ -150,7 +160,7 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
         for row in tab.split("\n"):
             cells = [c.strip() for c in row.split("|")]
             cells = [c for c in cells if c]
-            codes = [c for c in cells if re.match(r"^[A-Z](?:\.\d{1,2})?$", c)]
+            codes = [c for c in cells if re.match(r"^[A-Z](?:\d+)?(?:\.\d{1,2})?$", c)]
             for code in codes:
                 if code not in _table_descs:
                     desc = _pick_desc_after_code(cells, code)
@@ -161,7 +171,7 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
             continue
         cells = [c.strip().strip("*") for c in row.split("|")]
         cells = [c.strip() for c in cells if c.strip()]
-        codes = [c for c in cells if re.match(r"^[A-Z](?:\.\d{1,2})?$", c)]
+        codes = [c for c in cells if re.match(r"^[A-Z](?:\d+)?(?:\.\d{1,2})?$", c)]
         for code in codes:
             if code not in _table_descs:
                 desc = _pick_desc_after_code(cells, code)
@@ -169,7 +179,7 @@ def extract_valutazione(text: str, text_lower: str) -> dict:
                     _table_descs[code] = desc
 
     for m_bold in re.finditer(
-        r"\*\*\s*([A-Z](?:\.\d{1,2})?)\s*[\u2013\u2014\-–—]\s*(.{10,120}?)\s*\*\*",
+        r"\*\*\s*([A-Z](?:\d+)?(?:\.\d{1,2})?)\s*[\u2013\u2014\-\u2013\u2014\-]\s*(.{10,120}?)\s*\*\*",
         crit_section,
     ):
         code_b = m_bold.group(1)

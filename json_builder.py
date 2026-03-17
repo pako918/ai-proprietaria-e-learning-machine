@@ -112,17 +112,21 @@ def build_output(nested: dict) -> dict:
         quota_rib = None
         costo_mano = _parse_float(lotto.get("costo_manodopera") or ic.get("costo_manodopera"))
         imp_rib_dir = _parse_float(lotto.get("importo_soggetto_ribasso") or ic.get("importo_totale_soggetto_ribasso"))
-        perc_rib = lotto.get("quota_ribassabile_percentuale") or ic.get("quota_ribassabile_percentuale")
-        if costo_mano and importo:
+        oneri_sic = _parse_float(lotto.get("oneri_sicurezza_non_ribassabili"))
+        # Only compute splits from EXPLICIT monetary values in the document.
+        # Never derive percentages from a percentage found in passing text.
+        if costo_mano and importo and costo_mano < importo:
             quota_fissa = costo_mano
             quota_rib = round(importo - costo_mano, 2)
-        elif imp_rib_dir and importo:
+        elif oneri_sic and importo and oneri_sic < importo:
+            quota_fissa = oneri_sic
+            # quota_rib is soggetti a ribasso if we have it explicitly
+            if imp_rib_dir and imp_rib_dir < importo:
+                quota_rib = imp_rib_dir
+        elif imp_rib_dir and importo and imp_rib_dir < importo:
             quota_rib = imp_rib_dir
             quota_fissa = round(importo - imp_rib_dir, 2)
-        elif importo and perc_rib:
-            perc_fissa = 100 - perc_rib
-            quota_fissa = round(importo * perc_fissa / 100, 2)
-            quota_rib = round(importo * perc_rib / 100, 2)
+        # NOTE: do NOT fall back to percentage-based split — that produces hallucinated values
 
         lotti_output.append(LottoImporto(
             lotto=lotto.get("numero", 1),
@@ -162,7 +166,11 @@ def build_output(nested: dict) -> dict:
     if tipo_proc or criterio:
         parts = []
         if tipo_proc:
-            parts.append(f"Procedura {tipo_proc}")
+            senza_bando = tp.get("senza_bando", False)
+            if tipo_proc == "negoziata" and senza_bando:
+                parts.append("Procedura negoziata senza bando")
+            else:
+                parts.append(f"Procedura {tipo_proc}")
         rif = tp.get("riferimento_normativo")
         if rif:
             parts.append(f"({rif})")
@@ -175,13 +183,11 @@ def build_output(nested: dict) -> dict:
 
     importo_totale = _parse_float(ic.get("importo_totale_gara"))
 
-    # Note lavori
+    # Note lavori — usa il tipo contratto reale dal documento, non percentuali inventate
     note_lavori_parts = []
-    if ic.get("quota_ribassabile_percentuale"):
-        perc = ic["quota_ribassabile_percentuale"]
-        note_lavori_parts.append(
-            f"Il {100 - perc}% è prezzo fisso non soggetto a ribasso, il {perc}% è ribassabile"
-        )
+    tipo_contratto_str = ic.get("tipo_contratto")
+    if tipo_contratto_str:
+        note_lavori_parts.append(tipo_contratto_str)
     note_lavori = ". ".join(note_lavori_parts) if note_lavori_parts else None
 
     descr_lavori = DescrizioneLavori(

@@ -198,7 +198,7 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
     # ── Servizi analoghi / servizi di ingegneria ─────────────────────────
     srv = rp["capacita_tecnico_professionale"]
     m_srv2 = re.search(
-        r"(?:Aver\s+)?regolarmente\s+eseguito[,\s]+nei\s+((?:dieci|cinque|\d+)\s+anni\s+antecedent[^,]{0,80})",
+        r"(?:Aver\s+)?regolarmente\s+eseguito[,\s]+nei\s+((?:dieci|cinque|\d+)\s+anni\s+antecedent\w*[^.;:]{0,400})",
         text, re.IGNORECASE,
     )
     if m_srv2:
@@ -476,11 +476,11 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
                     sa["numero_servizi"] = int(m_num2.group(1))
         if not sa.get("periodo_riferimento"):
             m_per = re.search(
-                r"(?:nei|negli)\s+((?:ultimi\s+)?\w+\s+anni\s+antecedent[^.,;]{0,100})",
+                r"(?:nei|negli)\s+((?:ultimi\s+)?\w+\s+anni\s+antecedent\w*[^.;:]{0,400})",
                 text, re.IGNORECASE,
             )
             if m_per:
-                sa["periodo_riferimento"] = _clean(m_per.group(1))[:150]
+                sa["periodo_riferimento"] = _clean(m_per.group(1))[:500]
         if not sa.get("tipologia"):
             m_tip = re.search(
                 r"n\.\s*\d+\s*(?:\([^)]*\)\s*)?servizi\s+di\s+([^,]{5,80}?)(?:\s*[*]*\s*,\s*relativ|\s*[*]*\s*\.)",
@@ -764,7 +764,6 @@ def extract_requisiti(text: str, text_lower: str) -> dict:
     if not figure:
         ruoli_patterns = [
             (r"(?:autista|autotrasportator\w+)", None),
-            (r"(?:accompagnator\w+)", None),
             (r"(?:progettist\w+\s+(?:struttur\w+|architetton\w+|impiantist\w+))", None),
             (r"(?:direttore\s+(?:dei\s+)?lavori)", None),
             (r"(?:coordinatore\s+(?:per\s+la\s+)?sicurezza\s+in\s+fase\s+di\s+(?:progettazione|esecuzione))", None),

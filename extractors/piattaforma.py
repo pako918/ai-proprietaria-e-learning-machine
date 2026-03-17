@@ -37,7 +37,11 @@ def extract_piattaforma(text: str, text_lower: str) -> dict:
                 pt["gestore"] = gestore
             break
 
-    m_url = re.search(r"(?:https?://[^\s\n]+(?:aria|sintel|tuttogare|net4market|traspare|mepa|acquistinrete|start\.toscana|empulia|intercent|maggioli|asmecomm|appalti|gare)[^\s\n]*)", text, re.IGNORECASE)
+    # Match URL by platform name in the HOSTNAME only (prevent false positives
+    # from keywords appearing in URL paths, e.g. "mepa" inside "HomePage.jsp").
+    m_url = re.search(
+        r"https?://[^/\s\n]*(?:aria|sintel|tuttogare|net4market|traspare|acquistinretepa|start\.toscana|empulia|intercent|maggioli|asmecomm|portaleappalti|mepa)[^/\s\n]*(?:/[^\s\n]*)?",
+        text, re.IGNORECASE)
     if m_url:
         pt["url"] = m_url.group(0).rstrip(".,;)")
     elif not pt.get("url"):

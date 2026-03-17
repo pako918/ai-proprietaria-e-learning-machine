@@ -206,10 +206,20 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
             if m_desc:
                 lotto_data["denominazione"] = _clean(m_desc.group(1))
 
-            imp_lotto = re.search(r"(?:IMPORTO\s+LOTTO|importo\s+(?:del\s+)?lotto)[^€Ç\d]{0,30}[€Ç\s]*([\d.,]+)", lotto_text, re.IGNORECASE)
+            imp_lotto = re.search(r"(?:IMPORTO\s+LOTTO|importo\s+(?:del\s+)?lotto)[^\u20ac\xc7\d]{0,30}[\u20ac\xc7\s]*(\d[\d.,]+)", lotto_text, re.IGNORECASE)
             if imp_lotto:
                 v = _parse_euro(imp_lotto.group(1))
                 if v:
+                    lotto_data["importo_base_asta"] = v
+
+            # Importo massimo pagabile (usato negli appalti integrati DL+progettazione)
+            imp_max_pag = re.search(
+                r"importo\s+massimo\s+pagabile[^\u20ac\xc7\d]{0,30}[\u20ac\xc7]?\s*(\d[\d.,]+)",
+                lotto_text, re.IGNORECASE,
+            )
+            if imp_max_pag:
+                v = _parse_euro(imp_max_pag.group(1))
+                if v and v > 100:
                     lotto_data["importo_base_asta"] = v
 
             imp_base = re.search(r"[Ii]mporto\s+totale\s+a\s+base\s+di\s+gara\s*[:\n]\s*[€Ç]?\s*([\d.,]+)", lotto_text)
@@ -243,6 +253,17 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
                 v = _parse_euro(m_rib_l.group(1))
                 if v:
                     lotto_data["importo_soggetto_ribasso"] = v
+
+            # Oneri sicurezza non soggetti a ribasso (non usare come importo_base_asta!)
+            m_oner = re.search(
+                r"oneri\s+(?:di\s+|per\s+la\s+)?sicurezza[^€Ç\d]{0,80}"
+                r"(?:non\s+soggett\w+\s+a\s+ribasso[^€Ç\d]{0,30})?[€Ç]?\s*([\d.,]+)",
+                lotto_text, re.IGNORECASE,
+            )
+            if m_oner:
+                v = _parse_euro(m_oner.group(1))
+                if v and v > 100:
+                    lotto_data["oneri_sicurezza_non_ribassabili"] = v
 
             m_perc = re.search(r"(\d{1,3})\s*%\s*(?:di\s+[A-Z]|del\s+corrispettivo)", lotto_text, re.IGNORECASE)
             if m_perc:
@@ -283,18 +304,33 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
                 lotto_data["prestazioni"] = prestazioni
 
             cat_matches = re.findall(
-                r"(E\d{2}|S\d{2}|IA\d{2}|D\.?\d{2}|V\.?\d{2})\s+"
-                r"([^\n]{10,200}?)\s+"
-                r"(\d+[.,]\d{1,2})\s+"
-                r"([\d.,]+(?:\s*€)?)",
+                # Negative lookbehind: prevent matching "S30" inside "OS30"
+                r"(?<![A-Z0-9])(E\.?\d{2}|S\.?\d{2}|IA\.?\d{2}|D\.?\d{2}|V\.?\d{2})\s+"
+                r"([^\n]{5,200}?)\s+"
+                r"(\d{1,2}[.,]\d{2})\s+"
+                r"([\d.]+[.,]\d{2}(?:\s*€)?)",
                 lotto_text,
             )
             categorie = []
             for cat_id, desc, complessita, imp_str in cat_matches:
+                # --- Normalize code: E20→E.20, IA03→IA.03 ---
+                if "." not in cat_id:
+                    pfx_m = re.match(r'^([A-Z]+)(\d+)$', cat_id)
+                    norm_id = (pfx_m.group(1) + "." + pfx_m.group(2)) if pfx_m else cat_id
+                else:
+                    norm_id = cat_id
+                # --- Clean description: strip numeric column artefacts ---
+                desc_clean = re.sub(
+                    r'\s+\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?', ' ', desc
+                )
+                desc_clean = re.sub(r'\s+\d{4,}[.,]\d{1,2}', ' ', desc_clean)
+                desc_clean = _clean(desc_clean)[:200]
+                if not desc_clean or len(desc_clean) < 3:
+                    continue
                 v = _parse_euro(imp_str)
                 cat_entry = {
-                    "id_categoria": cat_id[:1] + "." + cat_id[1:] if "." not in cat_id else cat_id,
-                    "descrizione": _clean(desc)[:200],
+                    "id_categoria": norm_id,
+                    "descrizione": desc_clean,
                     "grado_complessita": float(complessita.replace(",", ".")),
                 }
                 if v:
@@ -347,6 +383,36 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
             )
             if m_den:
                 lotto["denominazione"] = _clean(m_den.group(1))
+
+    # --- Tipo contratto (a misura / a corpo) ---
+    _m_tipo_contr = re.search(
+        r"(?:Il\s+contratto\s+(?:di\s+appalto\s+)?[èée][^:]{0,30}:\s*[^.]{5,250}\.)",
+        text, re.IGNORECASE,
+    )
+    if not _m_tipo_contr:
+        _m_tipo_contr = re.search(
+            r"(?:Il\s+contratto[^.]{0,100}a\s+(?:misura|corpo)[^.]{0,200}\.)",
+            text, re.IGNORECASE,
+        )
+    if _m_tipo_contr:
+        ic["tipo_contratto"] = _clean(_m_tipo_contr.group(0))[:300]
+
+    # --- Fallback globale importo massimo pagabile per lotto ---
+    for _lotto_obj in sl.get("lotti", []):
+        _lno = _lotto_obj.get("numero", 1)
+        if isinstance(_lotto_obj.get("importo_base_asta"), (int, float)) \
+                and _lotto_obj["importo_base_asta"] > 10000:
+            continue  # already have a valid amount
+        # Look for the amount specifically near 'Lotto N' heading
+        _m_max = re.search(
+            rf"[Ll]otto\s*(?:n\.?\s*)?{_lno}\b[^.\n]{{0,300}}?"
+            r"importo\s+massimo\s+pagabile[^€Ç\d]{{0,30}}[€Ç]?\s*([\d.,]+)",
+            text, re.IGNORECASE | re.DOTALL,
+        )
+        if _m_max:
+            v = _parse_euro(_m_max.group(1))
+            if v and v > 100:
+                _lotto_obj["importo_base_asta"] = v
 
     if sl["numero_lotti"] == 1 and sl["lotti"]:
         lotto = sl["lotti"][0]
@@ -403,28 +469,61 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
         lotti_from_qte = _deduped
 
         if len(lotti_from_qte) >= 2:
-            sl["lotti"] = []
-            for _li, _imp in enumerate(lotti_from_qte):
-                sl["lotti"].append({"numero": _li + 1, "importo_base_asta": _imp})
-            sl["numero_lotti"] = len(lotti_from_qte)
+            # Only override per-lotto data when existing lotti lack valid importi
+            _existing_valid = all(
+                isinstance(l.get("importo_base_asta"), (int, float))
+                and l.get("importo_base_asta", 0) > 10000
+                for l in sl.get("lotti", [])
+            )
+            if not _existing_valid:
+                sl["lotti"] = []
+                for _li, _imp in enumerate(lotti_from_qte):
+                    sl["lotti"].append({"numero": _li + 1, "importo_base_asta": _imp})
+                sl["numero_lotti"] = len(lotti_from_qte)
 
-    # Categorie globali
+    # --- Global per-lotto importo massimo pagabile (works when amounts are in a
+    # paragraph referencing each lotto, not inside per-lotto sections) ---
+    for lotto in sl.get("lotti", []):
+        if lotto.get("importo_base_asta"):
+            continue
+        n = lotto["numero"]
+        m_gp = re.search(
+            r"importo\s+massimo\s+pagabile\s+per\s+il\s+LOTTO\s+" + str(n) +
+            r"[^€Ç\d]{0,40}[€Ç]?\s*([\d.,]+)",
+            text, re.IGNORECASE,
+        )
+        if m_gp:
+            v = _parse_euro(m_gp.group(1))
+            if v and v > 100:
+                lotto["importo_base_asta"] = v
+
+    # Categorie globali (engineering service categories E.xx / IA.xx etc.)
     all_cats = re.findall(
         r"((?:Edilizia|Strutture?|Impianti|Idraulica|Viabilit|Infrastruttur)\w*)\s+"
-        r"(E\.?\d{2}|S\.?\d{2}|IA\.?\d{2}|D\.?\d{2}|V\.?\d{2})\s+"
-        r"([^\n]{10,250}?)\s+"
-        r"(\d+[.,]\d{1,2})\s+"
-        r"([\d.,]+(?:\s*€)?)",
+        r"(?<![A-Z0-9])(E\.?\d{2}|S\.?\d{2}|IA\.?\d{2}|D\.?\d{2}|V\.?\d{2})\s+"
+        r"([^\n]{5,250}?)\s+"
+        r"(\d{1,2}[.,]\d{2})\s+"
+        r"([\d.]+[.,]\d{2}(?:\s*€)?)",
         text,
     )
     if all_cats:
         categorie_globali = []
         for cat_type, cat_id, desc, complessita, imp_str in all_cats:
             v = _parse_euro(imp_str)
+            if "." not in cat_id:
+                pfx_m = re.match(r'^([A-Z]+)(\d+)$', cat_id)
+                norm_id = (pfx_m.group(1) + "." + pfx_m.group(2)) if pfx_m else cat_id
+            else:
+                norm_id = cat_id
+            desc_clean = re.sub(r'\s+\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?', ' ', desc)
+            desc_clean = re.sub(r'\s+\d{4,}[.,]\d{2}', ' ', desc_clean)
+            desc_clean = _clean(desc_clean)[:200]
+            if not desc_clean or len(desc_clean) < 3:
+                continue
             entry = {
                 "tipo_opera": _clean(cat_type),
-                "id_categoria": cat_id[:1] + "." + cat_id[1:] if "." not in cat_id and len(cat_id) == 3 else cat_id,
-                "descrizione": _clean(desc)[:200],
+                "id_categoria": norm_id,
+                "descrizione": desc_clean,
                 "grado_complessita": float(complessita.replace(",", ".")),
             }
             if v:
@@ -433,12 +532,15 @@ def extract_lotti(text: str, text_lower: str, ig: dict) -> tuple[dict, dict]:
         if categorie_globali:
             ic["categorie_opere_dettaglio"] = categorie_globali
 
-    cats_simple = re.findall(r"(?:categori\w+|class\w+)\s+((?:[ESDIV]\.?\d{2}(?:\s*[-,e]\s*)?)+)", text, re.IGNORECASE)
+    # Simple category code detection (engineering E/IA/S/D/V only, skip OG/OS lavori codes)
+    cats_simple = re.findall(r"(?:categori\w+|class\w+)\s+((?:(?<![O])[ESDIV]\.?\d{2}(?:\s*[-,e]\s*)?)+)", text, re.IGNORECASE)
     if cats_simple:
         found_cats = set()
         for match in cats_simple:
-            for c in re.findall(r"[ESDIV]\.?\d{2}", match):
-                found_cats.add(c[:1] + "." + c[-2:] if "." not in c else c)
+            for c in re.findall(r"(?<![A-Z])[ESDIV]\.?\d{2}", match):
+                pfx_m2 = re.match(r'^([A-Z]+)(\d+)$', c.replace('.', ''))
+                norm = (pfx_m2.group(1) + "." + pfx_m2.group(2)) if pfx_m2 and "." not in c else c
+                found_cats.add(norm)
         ig["categorie_trovate"] = sorted(found_cats)
 
     og_os_matches = re.findall(r"\b(O[GS]\d{1,2})\b", text)

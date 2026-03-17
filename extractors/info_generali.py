@@ -69,6 +69,7 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
         r"(Provincia\s+di\s+\w+)",
         r"(?:AMMINISTRAZIONE\s+DELEGANTE\s*\n?\s*)(COMUNE\s+DI\s+[A-Z]+(?:\s*\([A-Z]+\))?)",
         r"(Centrale\s+Unica\s+di\s+Committenza\s+[^\n]+)",
+        r"(Azienda\s+(?:Sanitaria|Ospedaliera|ULSS|AUSL|USL|ASL)[^\n,;.]{3,80})",
     ]
     for pat in sa_patterns:
         m = re.search(pat, header, re.IGNORECASE | re.MULTILINE)
@@ -77,6 +78,25 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
             if name and len(name) > 3:
                 sa["denominazione"] = name
                 break
+
+    # Fallback: search full text for University / public body name
+    if not sa.get("denominazione"):
+        # "Università degli Studi di X" with full name (partita IVA near it)
+        m_univ = re.search(
+            r"\b(Universit[àa]\s+degli\s+Studi\s+di\s+[A-Za-zÀ-ùÀ-ú\s]{3,60}?)"
+            r"(?=\s*[-–]\s*(?:partita|p\.?\s*i\.?v|codice)|[,\s]*–|\s*\(|\n)",
+            text, re.IGNORECASE,
+        )
+        if not m_univ:
+            m_univ = re.search(
+                r"\b(Universit[àa]\s+(?:degli\s+Studi\s+(?:di\s+)?|della\s+)[A-Za-zÀ-ùÀ-ú\s]{3,60}?)"
+                r"(?=\s*–|\s*\(|\n|,)",
+                text, re.IGNORECASE,
+            )
+        if m_univ:
+            name = _clean(m_univ.group(1))
+            if name and len(name) > 8:
+                sa["denominazione"] = name
 
     if sa.get("denominazione"):
         den_lower = sa["denominazione"].lower()
@@ -92,6 +112,10 @@ def extract_info_generali(text: str, text_lower: str) -> dict:
             sa["tipo_ente"] = "ASL"
         elif "cuc" in den_lower or "centrale unica" in den_lower:
             sa["tipo_ente"] = "CUC"
+        elif "universit" in den_lower:
+            sa["tipo_ente"] = "Università"
+        elif "istituto" in den_lower or "agenzia" in den_lower:
+            sa["tipo_ente"] = "Ente Pubblico"
 
     m_cuc = re.search(
         r"(?:CENTRALE\s+UNICA\s+DI\s+COMMITTENZA|C\.?U\.?C\.?)"
